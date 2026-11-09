@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}New batch{% endblock %}
+{% block body %}
+{% set step = 1 %}
+{% include "steps.html" %}
+<h1>New batch</h1>
+<p class="lead muted">Upload the two required files. This step only reads files. It does not call a model.</p>
+<form method="post" action="/batches" enctype="multipart/form-data">
+  <label class="field">
+    <span class="field-title">Submission zip <span class="req">Required</span></span>
+    <span class="muted">Canvas: Grades → the assignment column → Download Submissions.</span>
+    <input type="file" name="submissions" accept=".zip,application/zip" required>
+  </label>
+  <label class="field">
+    <span class="field-title">Gradebook CSV <span class="req">Required</span></span>
+    <span class="muted">Canvas: Grades → Export. Keep this file. Only one column will be changed.</span>
+    <input type="file" name="gradebook" accept=".csv,text/csv" required>
+  </label>
+  <div class="field">
+    <span class="field-title">Model answer <span class="optional">Optional</span></span>
+    <label>Answer text
+      <textarea name="model_answer_text" placeholder="Paste the answer, or upload a PDF or images instead."></textarea>
+    </label>
+    <label>Answer files (PDF or images, more than one is fine)
+      <input type="file" name="model_answer_files" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.html" multiple>
+    </label>
+  </div>
+  <div class="actions">
+    <button type="submit">Read files and continue</button>
+  </div>
+</form>
+{% endblock %}

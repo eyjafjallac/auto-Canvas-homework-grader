@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Review{% endblock %}
+{% block body %}
+{% set step = 4 %}
+{% include "steps.html" %}
+<h1>{{ batch.assignment_column }}</h1>
+{% set ns = namespace(pending=0, reviewed=0, failed=0) %}
+{% for student in students %}
+  {% if student.reviewed %}{% set ns.reviewed = ns.reviewed + 1 %}
+  {% elif student.status == "error" %}{% set ns.failed = ns.failed + 1 %}
+  {% else %}{% set ns.pending = ns.pending + 1 %}
+  {% endif %}
+{% endfor %}
+<p class="lead muted">Waiting {{ ns.pending }} · Reviewed {{ ns.reviewed }}{% if ns.failed %} · Failed {{ ns.failed }}{% endif %}. {{ batch.job_message }}</p>
+{% if running %}
+<p class="banner ok">Grading is still running. Open anyone already scored. The current student shows up when that problem set finishes.</p>
+<p class="row-actions"><a class="button secondary small" href="/batches/{{ batch.id }}">Back to progress</a></p>
+{% endif %}
+<section class="panel">
+  <h2>{% if ns.pending or ns.failed %}Review the ones below first{% else %}This batch is ready to export{% endif %}</h2>
+  <p class="muted">The grade CSV only changes scores. Comments are a separate zip for SpeedGrader.</p>
+  <div class="actions">
+    <a class="button{% if ns.pending or ns.failed %} secondary{% endif %}" href="/batches/{{ batch.id }}/export">Export grades</a>
+    <a class="button secondary" href="/batches/{{ batch.id }}/feedback.zip">Download comments</a>
+    <a class="button secondary" href="/batches/{{ batch.id }}/rubric.md">Download rubric</a>
+  </div>
+</section>
+{% if unfinished and not running %}
+<form method="post" action="/batches/{{ batch.id }}/continue-grade">
+  <div class="actions">
+    <button type="submit">Continue unfinished students</button>
+  </div>
+</form>
+{% endif %}
+<form method="post" action="/batches/{{ batch.id }}/mark-reviewed">
+<table>
+  <thead>
+    <tr><th>Viewed</th><th>Student</th><th>Score</th><th>Status</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% set ns = namespace(marked=false) %}
+    {% for student in students %}
+    <tr{% if student.total_score is not none and (batch.points_possible or 0) - student.total_score > 0.001 %} class="short"{% endif %}>
+      <td>
+        {% if student.total_score is not none %}
+        <input type="checkbox" name="viewed" value="{{ student.id }}" {% if student.reviewed %}checked{% endif %} aria-label="Viewed {{ student.display_name }}">
+        {% else %}
+        <input type="checkbox" disabled aria-label="{{ student.display_name }} is not graded yet">
+        {% endif %}
+      </td>
+      <td>
+        {{ student.display_name }}
+        {% if student.illegible %}<span class="badge warn">Hard to read</span>{% endif %}
+        {% if student.truncated %}<span class="badge warn">First {{ page_limit }} pages only</span>{% endif %}
+        {% if not student.matched %}<span class="badge warn">Not in the gradebook</span>{% endif %}
+      </td>
+      <td>{% if student.total_score is not none %}{{ student.total_score|points }} / {{ batch.points_possible|points }}{% else %}—{% endif %}</td>
+      <td>
+        {% if student.reviewed %}<span class="badge ok">Reviewed</span>{% elif student.status == "error" %}<span class="badge warn">Failed</span>{% elif student.status == "graded" %}<span class="badge">Needs review</span>{% else %}<span class="badge">Not graded</span>{% endif %}
+        {% if student.error %}<div class="muted">{{ student.error }}</div>{% endif %}
+      </td>
+      <td>
+        {% if student.reviewed %}
+        <a class="button secondary small" href="/batches/{{ batch.id }}/students/{{ student.id }}">Look again</a>
+        {% elif not ns.marked %}
+        {% set ns.marked = true %}
+        <a class="button small" href="/batches/{{ batch.id }}/students/{{ student.id }}">Review this one</a>
+        {% else %}
+        <a class="button secondary small" href="/batches/{{ batch.id }}/students/{{ student.id }}">Review</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="actions">
+  <button type="submit">Save viewed</button>
+</div>
+<p class="muted">Tick the graded students you have looked at, then save. Scores are not changed. Anyone still being graded stays unticked.</p>
+</form>
+<div class="later">
+  <p class="muted">Changing the rubric regrades the class. Scores you edited and reviewed marks are cleared.</p>
+  <form method="post" action="/batches/{{ batch.id }}/reopen">
+    <button class="secondary" type="submit">Edit rubric and regrade</button>
+  </form>
+  <form method="post" action="/batches/{{ batch.id }}/delete" onsubmit="return confirm('Delete this batch?');">
+    <button class="danger" type="submit">Delete this batch</button>
+  </form>
+</div>
+{% endblock %}

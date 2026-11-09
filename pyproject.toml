@@ -1,0 +1,31 @@
+[project]
+name = "canvas-grader"
+version = "0.1.0"
+description = "Grade handwritten Canvas submissions locally and export a gradebook CSV."
+readme = "README.md"
+authors = [
+    { name = "eyjafjallac", email = "enoch2638@gmail.com" }
+]
+requires-python = ">=3.15"
+dependencies = [
+    "fastapi>=0.162.2",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "openai>=3.46.0",
+    "pillow>=13.0.0",
+    "pymupdf>=1.28.2",
+    "python-multipart>=0.0.33",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+canvas-grader = "canvas_grader.main:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]

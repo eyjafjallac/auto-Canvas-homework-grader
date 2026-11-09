@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Export{% endblock %}
+{% block body %}
+{% set step = 5 %}
+{% include "steps.html" %}
+<h1>Export {{ batch.assignment_column }}</h1>
+<p class="lead muted">The grade CSV only changes this column. Other columns and the Points Possible row stay as they are. Students without a score keep their original cell.</p>
+<section class="panel">
+  <h2>Download grades</h2>
+  <p class="muted">A Canvas grade CSV cannot upload comments with the scores. Comments are a separate zip for SpeedGrader.</p>
+  <div class="actions">
+    <a class="button" href="/batches/{{ batch.id }}/export.csv?scope=all">Export all graded scores ({{ included|length }})</a>
+    <a class="button secondary" href="/batches/{{ batch.id }}/export.csv?scope=reviewed">Export reviewed only ({{ reviewed_count }})</a>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/batches/{{ batch.id }}/feedback.zip">Download comments</a>
+    <a class="button secondary" href="/batches/{{ batch.id }}/rubric.md">Download rubric</a>
+    <a class="button secondary" href="/batches/{{ batch.id }}/review">Back to review</a>
+  </div>
+</section>
+{% if skipped %}
+<h2>Left out of the CSV</h2>
+<ul>
+  {% for student in skipped %}
+  <li>{{ student.display_name }} ({{ student.total_score|points }}) is not in the gradebook</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

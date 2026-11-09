@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Homework grader{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=3">
+  <script src="{{ url_for('static', path='app.js') }}" defer></script>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">Homework grader</a>
+    <nav>
+      <a href="/" {% if request.url.path == "/" %}class="is-current"{% endif %}>Batches</a>
+      <a class="nav-main" href="/batches/new">New batch</a>
+      <a href="/settings" {% if request.url.path == "/settings" %}class="is-current"{% endif %}>Settings</a>
+    </nav>
+  </header>
+  <main>
+    {% if notice %}<p class="banner ok">{{ notice }}</p>{% endif %}
+    {% if error %}<p class="banner bad">{{ error }}</p>{% endif %}
+    {% block body %}{% endblock %}
+  </main>
+</body>
+</html>

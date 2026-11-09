@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ student.display_name }}{% endblock %}
+{% block body %}
+{% set step = 4 %}
+{% include "steps.html" %}
+<p class="row-actions">
+  <a class="button secondary small" href="/batches/{{ batch.id }}/review">Back to list</a>
+  <span class="actions">
+    {% if previous_id %}<a class="button secondary small" href="/batches/{{ batch.id }}/students/{{ previous_id }}">Previous</a>{% endif %}
+    {% if next_id %}<a class="button secondary small" href="/batches/{{ batch.id }}/students/{{ next_id }}">Next</a>{% endif %}
+  </span>
+</p>
+<h1>{{ student.display_name }}</h1>
+<p class="muted">
+  {% if student_count is defined and student_count %}{{ position }} of {{ student_count }}.{% endif %}
+  {% if student.matched %}Gradebook ID {{ student.canvas_user_id }}{% else %}Not in the gradebook, so this student is left out of the CSV{% endif %}
+  {% if student.truncated %} Only the first {{ page_limit }} pages were read{% endif %}
+</p>
+<div class="review">
+  <div class="pages">
+    {% if page_count %}
+      {% for index in range(page_count) %}
+      <a href="/batches/{{ batch.id }}/students/{{ student.id }}/pages/{{ index }}" target="_blank">
+        <img src="/batches/{{ batch.id }}/students/{{ student.id }}/pages/{{ index }}" alt="Page {{ index + 1 }}">
+      </a>
+      {% endfor %}
+    {% else %}
+      <p>No page images.</p>
+    {% endif %}
+    {% if student.text_body %}
+    <h2>Typed submission</h2>
+    <pre>{{ student.text_body }}</pre>
+    {% endif %}
+  </div>
+  <form class="panel" method="post" action="/batches/{{ batch.id }}/students/{{ student.id }}">
+    {% if student.error %}<p class="banner bad">{{ student.error }}</p>{% endif %}
+    <p>Total <strong id="total">{{ student.total_score|points }}</strong> / {{ batch.points_possible|points }}</p>
+    {% for row in rows %}
+    <div class="score-row{% if row.points != '' and row.max_points - row.points > 0.001 %} short{% endif %}">
+      <div>
+        <strong>{{ row.name }}</strong>
+        <div class="muted">Max {{ row.max_points|points }}. {{ row.description }}</div>
+      </div>
+      <input data-points type="number" name="points" min="0" max="{{ row.max_points }}" step="0.01" value="{{ row.points }}">
+      <textarea name="reason" placeholder="Reason">{{ row.reason }}</textarea>
+    </div>
+    {% else %}
+    <p>No rubric yet.</p>
+    {% endfor %}
+    <label>Comment for the student
+      <textarea name="comment">{{ student.comment }}</textarea>
+    </label>
+    <label>Transcript
+      <textarea name="transcript">{{ student.transcript }}</textarea>
+    </label>
+    <label class="check"><input type="checkbox" name="illegible" value="1" {% if student.illegible %}checked{% endif %}>Some writing is hard to read</label>
+    <label class="check"><input type="checkbox" name="reviewed" value="1" {% if student.reviewed %}checked{% endif %}>I have reviewed this. Saving then opens the next one that is not reviewed.</label>
+    <div class="actions">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</div>
+<script>
+  function refreshTotal() {
+    let total = 0;
+    document.querySelectorAll("[data-points]").forEach((input) => {
+      const value = parseFloat(input.value);
+      if (!Number.isNaN(value)) total += value;
+      const max = parseFloat(input.max);
+      const row = input.closest(".score-row");
+      if (row && !Number.isNaN(value) && !Number.isNaN(max)) {
+        row.classList.toggle("short", max - value > 0.001);
+      }
+    });
+    document.getElementById("total").textContent = total.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+  document.querySelectorAll("[data-points]").forEach((input) => input.addEventListener("input", refreshTotal));
+</script>
+{% endblock %}
