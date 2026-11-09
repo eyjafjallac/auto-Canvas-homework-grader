@@ -170,7 +170,10 @@ def _limit_edge(image: Image.Image) -> Image.Image:
     if edge <= MAX_EDGE:
         return image
     scale = MAX_EDGE / edge
-    resized = image.resize((max(1, int(width * scale)), max(1, int(height * scale))), Image.Resampling.LANCZOS)
+    resized = image.resize(
+        (max(1, int(width * scale)), max(1, int(height * scale))),
+        Image.Resampling.LANCZOS,
+    )
     return resized
 
 

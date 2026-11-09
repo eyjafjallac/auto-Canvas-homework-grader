@@ -7,8 +7,18 @@ from pathlib import Path
 
 from canvas_grader.grading import dump_scores, grade_submission, problem_groups
 from canvas_grader.llm import LLMError, endpoint_for
-from canvas_grader.render import MAX_SOURCE_PAGES, PreparedPages, pages_exceed_limit, prepare_submission
-from canvas_grader.rubric import draft_rubric, dump_criteria, read_submission, transcribe_model_answer
+from canvas_grader.render import (
+    MAX_SOURCE_PAGES,
+    PreparedPages,
+    pages_exceed_limit,
+    prepare_submission,
+)
+from canvas_grader.rubric import (
+    draft_rubric,
+    dump_criteria,
+    read_submission,
+    transcribe_model_answer,
+)
 from canvas_grader.store import (
     answer_dir,
     get_batch,
@@ -44,14 +54,18 @@ def start_grading(batch_id: int, *, resume: bool) -> None:
 def _start(batch_id: int, target) -> None:
     with _guard:
         if _running:
-            raise RuntimeError("Another batch is already running. Wait for it to finish so two models are not loaded at once.")
+            raise RuntimeError(
+                "Another batch is already running. Wait for it to finish so two models are not loaded at once."
+            )
         _running.add(batch_id)
 
     def wrap() -> None:
         try:
             target()
         except Exception as exc:
-            update_batch(batch_id, status="error", error=_short(exc), job_message="Interrupted")
+            update_batch(
+                batch_id, status="error", error=_short(exc), job_message="Interrupted"
+            )
         finally:
             with _guard:
                 _running.discard(batch_id)
@@ -75,10 +89,16 @@ def _read(batch_id: int) -> None:
     )
     papers: list[dict] = []
     for index, student in enumerate(pilots, start=1):
-        update_batch(batch_id, job_current=index, job_message=f"Reading student {student.pilot_label} ({index}/{len(pilots)})")
+        update_batch(
+            batch_id,
+            job_current=index,
+            job_message=f"Reading student {student.pilot_label} ({index}/{len(pilots)})",
+        )
         current = get_student(student.id)
         if current.status == "read" and current.transcript and not current.error:
-            papers.append(_paper(current.pilot_label, current.transcript, current.differences))
+            papers.append(
+                _paper(current.pilot_label, current.transcript, current.differences)
+            )
             continue
         try:
             prepared = ensure_student_pages(current)
@@ -100,13 +120,22 @@ def _read(batch_id: int) -> None:
                 status="read",
                 error="",
             )
-            papers.append(_paper(current.pilot_label, result["transcript"], result["differences"]))
+            papers.append(
+                _paper(current.pilot_label, result["transcript"], result["differences"])
+            )
         except Exception as exc:
             update_student(current.id, status="error", error=_short(exc))
     if not papers:
-        update_batch(batch_id, status="error", error="None of the 5 submissions could be read, so there is no rubric yet.", job_message="Reading failed")
+        update_batch(
+            batch_id,
+            status="error",
+            error="None of the 5 submissions could be read, so there is no rubric yet.",
+            job_message="Reading failed",
+        )
         return
-    update_batch(batch_id, job_current=len(pilots) + 1, job_message="Drafting the rubric")
+    update_batch(
+        batch_id, job_current=len(pilots) + 1, job_message="Drafting the rubric"
+    )
     try:
         criteria = draft_rubric(
             endpoint,
@@ -115,7 +144,12 @@ def _read(batch_id: int) -> None:
             papers=papers,
         )
     except Exception as exc:
-        update_batch(batch_id, status="error", error=_short(exc), job_message="Could not draft the rubric")
+        update_batch(
+            batch_id,
+            status="error",
+            error=_short(exc),
+            job_message="Could not draft the rubric",
+        )
         return
     update_batch(
         batch_id,
@@ -130,7 +164,9 @@ def _grade(batch_id: int, resume: bool) -> None:
     batch = get_batch(batch_id)
     criteria = batch.criteria()
     if not criteria:
-        update_batch(batch_id, status="error", error="There is no rubric yet.", job_message="")
+        update_batch(
+            batch_id, status="error", error="There is no rubric yet.", job_message=""
+        )
         return
     endpoint = endpoint_for(get_settings(), batch.grade_provider)
     students = list_students(batch_id)
@@ -163,7 +199,11 @@ def _grade(batch_id: int, resume: bool) -> None:
         if resume and current.status in {"graded", "reviewed"}:
             update_batch(batch_id, job_current=index)
             continue
-        update_batch(batch_id, job_current=index, job_message=f"Grading {current.display_name} ({index}/{len(students)})")
+        update_batch(
+            batch_id,
+            job_current=index,
+            job_message=f"Grading {current.display_name} ({index}/{len(students)})",
+        )
         try:
             prepared = ensure_student_pages(current)
             if not prepared.image_paths and not prepared.text.strip():

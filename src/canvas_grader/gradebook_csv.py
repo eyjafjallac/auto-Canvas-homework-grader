@@ -46,7 +46,9 @@ class Gradebook:
             if not _is_assignment_header(header):
                 continue
             points = self.points_possible(index)
-            found.append((index, header, None if points is None else _format_points(points)))
+            found.append(
+                (index, header, None if points is None else _format_points(points))
+            )
         return found
 
     def points_possible(self, column: int) -> float | None:
@@ -85,7 +87,8 @@ class Gradebook:
         hits = [
             index
             for index, row in enumerate(self.rows)
-            if index != self.points_row_index and _normalize_name(_cell(row, self.student_column)) == target
+            if index != self.points_row_index
+            and _normalize_name(_cell(row, self.student_column)) == target
         ]
         if len(hits) == 1:
             return hits[0]
@@ -120,7 +123,9 @@ def load_gradebook(path: Path) -> Gradebook:
     )
 
 
-def apply_scores(gradebook: Gradebook, column: str, scores_by_user_id: dict[str, str]) -> list[str]:
+def apply_scores(
+    gradebook: Gradebook, column: str, scores_by_user_id: dict[str, str]
+) -> list[str]:
     """Write scores for known student IDs. Other cells stay as they were.
 
     Returns user ids that were not present in the gradebook.

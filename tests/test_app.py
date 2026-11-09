@@ -46,13 +46,23 @@ def test_grading_batch_links_to_finished_students(tmp_path: Path, monkeypatch) -
     assert "Ada" in review.text
 
 
-def test_mark_graded_students_reviewed_leaves_the_ungraded(tmp_path: Path, monkeypatch) -> None:
+def test_mark_graded_students_reviewed_leaves_the_ungraded(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
-    from canvas_grader.store import add_student, create_batch, get_student, update_batch, update_student
+    from canvas_grader.store import (
+        add_student,
+        create_batch,
+        get_student,
+        update_batch,
+        update_student,
+    )
 
     with TestClient(app) as client:
         batch = create_batch("")
-        update_batch(batch.id, status="review", assignment_column="HW5", points_possible=3)
+        update_batch(
+            batch.id, status="review", assignment_column="HW5", points_possible=3
+        )
         graded = add_student(
             batch.id,
             canvas_user_id="1",
@@ -82,7 +92,9 @@ def test_mark_graded_students_reviewed_leaves_the_ungraded(tmp_path: Path, monke
         )
         ada = get_student(graded)
         grace = get_student(waiting)
-        cleared = client.post(f"/batches/{batch.id}/mark-reviewed", follow_redirects=False)
+        cleared = client.post(
+            f"/batches/{batch.id}/mark-reviewed", follow_redirects=False
+        )
         ada_after = get_student(graded)
     assert page.status_code == 200
     assert f'name="viewed" value="{graded}"' in page.text
@@ -98,11 +110,18 @@ def test_mark_graded_students_reviewed_leaves_the_ungraded(tmp_path: Path, monke
     assert ada_after.status == "graded"
 
 
-def test_review_highlights_scores_below_the_maximum(tmp_path: Path, monkeypatch) -> None:
+def test_review_highlights_scores_below_the_maximum(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
     import json
 
-    from canvas_grader.store import add_student, create_batch, update_batch, update_student
+    from canvas_grader.store import (
+        add_student,
+        create_batch,
+        update_batch,
+        update_student,
+    )
 
     with TestClient(app) as client:
         batch = create_batch("")
@@ -114,8 +133,16 @@ def test_review_highlights_scores_below_the_maximum(tmp_path: Path, monkeypatch)
             rubric_json=json.dumps(
                 {
                     "criteria": [
-                        {"name": "Problem 1: answer", "max_points": 2, "description": "final"},
-                        {"name": "Problem 2: work", "max_points": 1, "description": "algebra"},
+                        {
+                            "name": "Problem 1: answer",
+                            "max_points": 2,
+                            "description": "final",
+                        },
+                        {
+                            "name": "Problem 2: work",
+                            "max_points": 1,
+                            "description": "algebra",
+                        },
                     ]
                 }
             ),
@@ -136,8 +163,18 @@ def test_review_highlights_scores_below_the_maximum(tmp_path: Path, monkeypatch)
             total_score=2,
             scores_json=json.dumps(
                 [
-                    {"name": "Problem 1: answer", "max_points": 2, "points": 1, "reason": "missed a term"},
-                    {"name": "Problem 2: work", "max_points": 1, "points": 1, "reason": ""},
+                    {
+                        "name": "Problem 1: answer",
+                        "max_points": 2,
+                        "points": 1,
+                        "reason": "missed a term",
+                    },
+                    {
+                        "name": "Problem 2: work",
+                        "max_points": 1,
+                        "points": 1,
+                        "reason": "",
+                    },
                 ]
             ),
         )

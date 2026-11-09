@@ -8,12 +8,23 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
 from openai import (
     APIConnectionError,
     APITimeoutError,
     BadRequestError,
     OpenAI,
+    Timeout,
+)
+from openai.types.chat import ChatCompletionMessageParam
+from openai.types.chat.chat_completion_content_part_image_param import (
+    ChatCompletionContentPartImageParam,
+    ImageURL,
+)
+from openai.types.chat.chat_completion_content_part_param import (
+    ChatCompletionContentPartParam,
+)
+from openai.types.chat.chat_completion_content_part_text_param import (
+    ChatCompletionContentPartTextParam,
 )
 
 from canvas_grader.config import DEFAULT_ONLINE_BASE_URL
@@ -85,9 +96,15 @@ def test_endpoint(endpoint: Endpoint) -> ConnectionTest:
     try:
         model_ids = list_model_ids(endpoint)
     except APIConnectionError:
-        return ConnectionTest(False, f"Cannot reach {endpoint.base_url}. Check the address and that the server is running.")
+        return ConnectionTest(
+            False,
+            f"Cannot reach {endpoint.base_url}. Check the address and that the server is running.",
+        )
     except APITimeoutError:
-        return ConnectionTest(False, f"Timed out connecting to {endpoint.base_url}. Check the address and that the server is running.")
+        return ConnectionTest(
+            False,
+            f"Timed out connecting to {endpoint.base_url}. Check the address and that the server is running.",
+        )
     except Exception as exc:
         notes.append(f"Could not list models: {_short(exc)}")
         model_ids = None
@@ -96,7 +113,9 @@ def test_endpoint(endpoint: Endpoint) -> ConnectionTest:
             notes.append(f"Found model {endpoint.model}.")
         else:
             preview = ", ".join(model_ids[:12]) or "(empty)"
-            notes.append(f'"{endpoint.model}" is not in the list. The server currently has: {preview}')
+            notes.append(
+                f'"{endpoint.model}" is not in the list. The server currently has: {preview}'
+            )
     try:
         reply = chat(
             endpoint,
@@ -106,7 +125,9 @@ def test_endpoint(endpoint: Endpoint) -> ConnectionTest:
             timeout=180,
         )
     except LLMError as exc:
-        notes.append(f"Vision check failed: {exc}. This address or model may not accept images.")
+        notes.append(
+            f"Vision check failed: {exc}. This address or model may not accept images."
+        )
         return ConnectionTest(False, "\n".join(notes))
     if "ok" in reply.lower():
         notes.append("Vision check passed.")
@@ -174,7 +195,9 @@ def chat(
     except BadRequestError as exc:
         message = _short(exc).lower()
         if _has_image(content_parts) and "detail" in message:
-            return _complete(endpoint, system, content_parts, detail=False, timeout=timeout)
+            return _complete(
+                endpoint, system, content_parts, detail=False, timeout=timeout
+            )
         if "system" in message:
             merged = [Part(text=system), *content_parts]
             return _complete(endpoint, None, merged, detail=True, timeout=timeout)
@@ -193,15 +216,19 @@ def _complete(
     detail: bool,
     timeout: float,
 ) -> str:
-    messages: list[dict] = []
+    messages: list[ChatCompletionMessageParam] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": _user_content(parts, detail)})
     client = _client(endpoint, timeout=timeout)
     try:
-        response = client.chat.completions.create(model=endpoint.model, messages=messages)
-    except (APIConnectionError, APITimeoutError):
-        response = client.chat.completions.create(model=endpoint.model, messages=messages)
+        response = client.chat.completions.create(
+            model=endpoint.model, messages=messages
+        )
+    except APIConnectionError, APITimeoutError:
+        response = client.chat.completions.create(
+            model=endpoint.model, messages=messages
+        )
     content = response.choices[0].message.content
     if isinstance(content, list):
         texts: list[str] = []
@@ -216,7 +243,9 @@ def _complete(
     return str(content)
 
 
-def _parts(user_text: str, images: list[ImageSource] | None, parts: list[Part] | None) -> list[Part]:
+def _parts(
+    user_text: str, images: list[ImageSource] | None, parts: list[Part] | None
+) -> list[Part]:
     if parts is not None:
         return parts
     content = [Part(text=user_text)]
@@ -228,18 +257,28 @@ def _has_image(parts: list[Part]) -> bool:
     return any(part.image is not None for part in parts)
 
 
-def _user_content(parts: list[Part], detail: bool) -> str | list[dict]:
-    blocks: list[dict] = []
+def _user_content(
+    parts: list[Part], detail: bool
+) -> str | list[ChatCompletionContentPartParam]:
+    blocks: list[ChatCompletionContentPartParam] = []
     for part in parts:
         if part.text:
-            blocks.append({"type": "text", "text": part.text})
+            text_block: ChatCompletionContentPartTextParam = {
+                "type": "text",
+                "text": part.text,
+            }
+            blocks.append(text_block)
         if part.image is not None:
             encoded = base64.b64encode(_jpeg_bytes(part.image)).decode("ascii")
-            image_url: dict[str, str] = {"url": f"data:image/jpeg;base64,{encoded}"}
+            image_url: ImageURL = {"url": f"data:image/jpeg;base64,{encoded}"}
             if detail:
                 # OpenAI accepts low, high, or auto. "original" is rejected by LM Studio.
                 image_url["detail"] = "high"
-            blocks.append({"type": "image_url", "image_url": image_url})
+            image_block: ChatCompletionContentPartImageParam = {
+                "type": "image_url",
+                "image_url": image_url,
+            }
+            blocks.append(image_block)
     if len(blocks) == 1 and blocks[0]["type"] == "text":
         return str(blocks[0]["text"])
     if not blocks:
@@ -257,7 +296,7 @@ def _client(endpoint: Endpoint, timeout: float) -> OpenAI:
     return OpenAI(
         api_key=endpoint.api_key,
         base_url=endpoint.base_url.rstrip("/"),
-        timeout=httpx.Timeout(timeout, connect=30),
+        timeout=Timeout(timeout, connect=30),
         max_retries=0,
     )
 

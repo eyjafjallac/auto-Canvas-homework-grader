@@ -7,11 +7,12 @@ import os
 import shutil
 import sqlite3
 import threading
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from canvas_grader.config import (
     DEFAULT_LOCAL_BASE_URL,
@@ -183,9 +184,15 @@ def init_db() -> None:
         _migrate_settings(conn)
         row = conn.execute("SELECT id FROM settings WHERE id = 1").fetchone()
         if row is None:
-            online_key = os.environ.get("ONLINE_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
-            online_base = os.environ.get("ONLINE_BASE_URL") or os.environ.get("DEEPSEEK_BASE_URL", DEFAULT_ONLINE_BASE_URL)
-            online_model = os.environ.get("ONLINE_MODEL") or os.environ.get("DEEPSEEK_MODEL", DEFAULT_ONLINE_MODEL)
+            online_key = os.environ.get("ONLINE_API_KEY") or os.environ.get(
+                "DEEPSEEK_API_KEY", ""
+            )
+            online_base = os.environ.get("ONLINE_BASE_URL") or os.environ.get(
+                "DEEPSEEK_BASE_URL", DEFAULT_ONLINE_BASE_URL
+            )
+            online_model = os.environ.get("ONLINE_MODEL") or os.environ.get(
+                "DEEPSEEK_MODEL", DEFAULT_ONLINE_MODEL
+            )
             conn.execute(
                 """
                 INSERT INTO settings (
@@ -243,13 +250,21 @@ def _migrate_settings(conn: sqlite3.Connection) -> None:
     """Add the online endpoint columns without dropping a key saved earlier."""
     names = {row["name"] for row in conn.execute("PRAGMA table_info(settings)")}
     if "online_base_url" not in names:
-        conn.execute("ALTER TABLE settings ADD COLUMN online_base_url TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "ALTER TABLE settings ADD COLUMN online_base_url TEXT NOT NULL DEFAULT ''"
+        )
     if "online_model" not in names:
-        conn.execute("ALTER TABLE settings ADD COLUMN online_model TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "ALTER TABLE settings ADD COLUMN online_model TEXT NOT NULL DEFAULT ''"
+        )
     if "online_api_key" not in names:
-        conn.execute("ALTER TABLE settings ADD COLUMN online_api_key TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "ALTER TABLE settings ADD COLUMN online_api_key TEXT NOT NULL DEFAULT ''"
+        )
         if "deepseek_api_key" in names:
-            conn.execute("UPDATE settings SET online_api_key = deepseek_api_key WHERE online_api_key = ''")
+            conn.execute(
+                "UPDATE settings SET online_api_key = deepseek_api_key WHERE online_api_key = ''"
+            )
 
 
 def create_batch(model_answer_text: str) -> Batch:
@@ -262,7 +277,7 @@ def create_batch(model_answer_text: str) -> Batch:
             """,
             (created_at, model_answer_text),
         )
-        batch_id = int(cursor.lastrowid)
+        batch_id = _inserted_id(cursor)
     batch_dir(batch_id).mkdir(parents=True, exist_ok=True)
     return get_batch(batch_id)
 
@@ -323,7 +338,7 @@ def add_student(
                 json.dumps(source_files),
             ),
         )
-        return int(cursor.lastrowid)
+        return _inserted_id(cursor)
 
 
 def list_students(batch_id: int) -> list[Student]:
@@ -337,7 +352,9 @@ def list_students(batch_id: int) -> list[Student]:
 
 def get_student(student_id: int) -> Student:
     with _connect() as conn:
-        row = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM students WHERE id = ?", (student_id,)
+        ).fetchone()
     if row is None:
         raise KeyError(student_id)
     return _student_from_row(row)
@@ -381,7 +398,7 @@ def extracted_dir(batch_id: int) -> Path:
 
 
 @contextmanager
-def _connect() -> Iterator[sqlite3.Connection]:
+def _connect() -> Generator[sqlite3.Connection]:
     with _lock:
         connection = sqlite3.connect(data_dir() / "grader.db", timeout=30)
         try:
@@ -391,6 +408,13 @@ def _connect() -> Iterator[sqlite3.Connection]:
             connection.commit()
         finally:
             connection.close()
+
+
+def _inserted_id(cursor: sqlite3.Cursor) -> int:
+    row_id = cursor.lastrowid
+    if row_id is None:
+        raise RuntimeError("SQLite did not return a row id")
+    return row_id
 
 
 def _assignments(fields: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
