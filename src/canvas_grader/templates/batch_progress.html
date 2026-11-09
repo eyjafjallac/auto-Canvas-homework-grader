@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}In progress{% endblock %}
+{% block body %}
+{% set step = 4 if batch.status == "grading" else 2 %}
+{% include "steps.html" %}
+<h1>{{ batch.assignment_column or "In progress" }}</h1>
+<section id="progress" data-url="/batches/{{ batch.id }}/status.json">
+  <p id="progress-message">{{ batch.job_message or "Preparing" }}</p>
+  {% if batch.job_total %}
+  <div class="meter" aria-hidden="true"><span id="progress-bar" style="width: {{ (100 * batch.job_current / batch.job_total)|round(1) }}%"></span></div>
+  {% endif %}
+  <p id="progress-count" class="muted">{{ batch.job_current }} / {{ batch.job_total }}</p>
+</section>
+{% if batch.error and not running %}<p class="banner bad">{{ batch.error }}</p>{% endif %}
+{% if not running and batch.status in ["reading", "error"] %}
+<p>The last run stopped. Pages already read are kept and are not sent again.</p>
+<form method="post" action="/batches/{{ batch.id }}/continue-read">
+  <div class="actions">
+    <button type="submit">Continue reading</button>
+  </div>
+</form>
+{% elif not running and batch.status == "grading" %}
+<p>Grading stopped partway. Finished students are skipped.</p>
+<form method="post" action="/batches/{{ batch.id }}/continue-grade">
+  <div class="actions">
+    <button type="submit">Continue unfinished students</button>
+  </div>
+</form>
+{% elif running %}
+<p class="muted">This page updates on its own. You can leave it.</p>
+{% endif %}
+{% if batch.status == "grading" %}
+<div class="actions">
+  <a class="button" href="/batches/{{ batch.id }}/review">Review finished students</a>
+</div>
+<p class="muted">A student appears there after all of that student's problems are graded. The one in progress stays hidden until then.</p>
+{% endif %}
+{% if running %}
+<script>
+  async function poll() {
+    const root = document.getElementById("progress");
+    const response = await fetch(root.dataset.url);
+    const data = await response.json();
+    document.getElementById("progress-message").textContent = data.message || "";
+    document.getElementById("progress-count").textContent = data.current + " / " + data.total;
+    const bar = document.getElementById("progress-bar");
+    if (bar && data.total) bar.style.width = Math.min(100, (100 * data.current / data.total)) + "%";
+    if (data.done) {
+      location.reload();
+      return;
+    }
+    setTimeout(poll, 2000);
+  }
+  poll();
+</script>
+{% endif %}
+{% endblock %}

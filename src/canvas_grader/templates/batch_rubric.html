@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Confirm rubric{% endblock %}
+{% block body %}
+{% set step = 3 %}
+{% include "steps.html" %}
+<h1>{{ batch.assignment_column }}</h1>
+{% if batch.error %}<p class="banner bad">{{ batch.error }}</p>{% endif %}
+<p class="lead muted">Points possible {{ batch.points_possible|points }}. These samples only set the standard. They are not written into the grade CSV.</p>
+
+{% if answer_count %}
+<details class="panel">
+  <summary>Model answer ({{ answer_count }} images)</summary>
+  <div class="answer">
+    {% for index in range(answer_count) %}
+    <a href="/batches/{{ batch.id }}/answer/{{ index }}" target="_blank">
+      <img src="/batches/{{ batch.id }}/answer/{{ index }}" alt="Answer image {{ index + 1 }}">
+    </a>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+
+{% for student in pilots %}
+<article class="panel">
+  <h2>Student {{ student.pilot_label }}　{{ student.display_name }}</h2>
+  {% if student.error %}<p class="banner bad">{{ student.error }}</p>{% endif %}
+  {% if student.illegible %}<p class="badge warn">Hard to read</p>{% endif %}
+  {% if student.truncated %}<p class="badge warn">Too many pages. Only the first {{ page_limit }} were read.</p>{% endif %}
+  <div class="pages">
+    {% for index in range(pilot_pages[student.id]) %}
+    <a href="/batches/{{ batch.id }}/students/{{ student.id }}/pages/{{ index }}" target="_blank">
+      <img src="/batches/{{ batch.id }}/students/{{ student.id }}/pages/{{ index }}" alt="Student {{ student.pilot_label }} image {{ index + 1 }}">
+    </a>
+    {% endfor %}
+  </div>
+  <h3>Differences from the answer</h3>
+  <p>{{ student.differences or "(none)" }}</p>
+  <details>
+    <summary>Transcript</summary>
+    <p>{{ student.transcript or "(none)" }}</p>
+  </details>
+</article>
+{% endfor %}
+
+<form method="post" action="/batches/{{ batch.id }}/rubric">
+  <fieldset class="panel">
+    <legend>Rubric</legend>
+    <p class="sum-line">Current total <strong id="criteria-sum" data-target="{{ batch.points_possible or 0 }}">{{ criteria_sum|points }}</strong>. It must equal {{ batch.points_possible|points }}.</p>
+    <div id="criteria">
+      {% for item in criteria %}
+      <div class="criterion">
+        <input type="text" name="name" value="{{ item.name }}" placeholder="Criterion name">
+        <input type="number" name="max_points" min="0" step="0.01" value="{{ item.max_points }}">
+        <textarea name="description" placeholder="How to award points">{{ item.description }}</textarea>
+        <button type="button" class="secondary remove">Remove</button>
+      </div>
+      {% else %}
+      <div class="criterion">
+        <input type="text" name="name" placeholder="Criterion name">
+        <input type="number" name="max_points" min="0" step="0.01" value="0">
+        <textarea name="description" placeholder="How to award points"></textarea>
+        <button type="button" class="secondary remove">Remove</button>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="secondary" id="add-criterion">Add criterion</button>
+  </fieldset>
+
+  <label>Summary for discussion (no names; copy the whole block)
+    <textarea readonly>{{ discussion }}</textarea>
+  </label>
+
+  <fieldset class="panel">
+    <legend>Which model grades the class</legend>
+    <label class="choice">
+      <input type="radio" name="grade_provider" value="local" {% if batch.grade_provider != 'online' %}checked{% endif %}>
+      Local model
+      <p class="muted">The class stays on this computer and is not uploaded. This is the default.</p>
+    </label>
+    <label class="choice">
+      <input type="radio" name="grade_provider" value="online" {% if batch.grade_provider == 'online' %}checked{% endif %}>
+      Online model
+      <p class="muted">Every student's page images are sent to the online model, without names.</p>
+    </label>
+  </fieldset>
+  <div class="actions">
+    <button type="submit" name="action" value="grade" {% if running_any %}disabled{% endif %}>Grade the class with this rubric</button>
+    <button type="submit" class="secondary" name="action" value="save">Save only</button>
+    {% if criteria %}<a class="button secondary" href="/batches/{{ batch.id }}/rubric.md">Download rubric</a>{% endif %}
+  </div>
+  <p class="muted">The total must equal the points possible before grading. Saving does not start grading. Download uses the last saved rubric.</p>
+</form>
+
+<template id="criterion-template">
+  <div class="criterion">
+    <input type="text" name="name" placeholder="Criterion name">
+    <input type="number" name="max_points" min="0" step="0.01" value="0">
+    <textarea name="description" placeholder="How to award points"></textarea>
+    <button type="button" class="secondary remove">Remove</button>
+  </div>
+</template>
+<script>
+  const list = document.getElementById("criteria");
+  const sum = document.getElementById("criteria-sum");
+  const target = parseFloat(sum.dataset.target);
+  function refreshSum() {
+    let total = 0;
+    list.querySelectorAll("input[name=max_points]").forEach((input) => {
+      const value = parseFloat(input.value);
+      if (!Number.isNaN(value)) total += value;
+    });
+    sum.textContent = total.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+    const matched = !Number.isNaN(target) && Math.abs(total - target) < 0.001;
+    sum.classList.toggle("match", matched);
+    sum.classList.toggle("off", !matched);
+  }
+  function bind(row) {
+    row.querySelector(".remove").addEventListener("click", () => {
+      if (list.children.length > 1) row.remove();
+      refreshSum();
+    });
+    row.querySelector("input[name=max_points]").addEventListener("input", refreshSum);
+  }
+  list.querySelectorAll(".criterion").forEach(bind);
+  document.getElementById("add-criterion").addEventListener("click", () => {
+    const row = document.getElementById("criterion-template").content.firstElementChild.cloneNode(true);
+    list.appendChild(row);
+    bind(row);
+    refreshSum();
+  });
+  refreshSum();
+</script>
+{% endblock %}

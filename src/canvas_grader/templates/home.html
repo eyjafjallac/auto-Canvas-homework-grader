@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Batches{% endblock %}
+{% block body %}
+<h1>Batches</h1>
+{% if batches %}
+<p class="lead muted">Use the button on each row to continue that batch.</p>
+{% else %}
+<p class="lead muted">Download the submission zip and gradebook CSV from Canvas, grade here, then export.</p>
+{% endif %}
+{% if running %}<p class="banner ok">A batch is already running. This computer handles one at a time.</p>{% endif %}
+{% if batches %}
+<table>
+  <thead>
+    <tr><th>Created</th><th>Assignment</th><th>Status</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for batch in batches %}
+    {% set open_label = {
+      "setup": "Continue setup",
+      "reading": "View progress",
+      "rubric_ready": "Confirm rubric",
+      "grading": "View progress",
+      "review": "Review",
+      "error": "Open",
+    }.get(batch.status, "Open") %}
+    <tr>
+      <td>{{ batch.created_at.replace("T", " ") }}</td>
+      <td>{{ batch.assignment_column or "Not chosen yet" }}</td>
+      <td><span class="badge status-{{ batch.status }}">{{ status_label(batch.status) }}</span></td>
+      <td>
+        <a class="button small" href="/batches/{{ batch.id }}">{{ open_label }}</a>
+        {% if batch.status == "grading" %}
+        <a class="button secondary small" href="/batches/{{ batch.id }}/review">Review finished</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<section class="panel empty">
+  <h2>No batches yet</h2>
+  <ol>
+    <li>Download the submission zip and the gradebook CSV from Canvas.</li>
+    <li>Upload them and choose how many papers draft the rubric. The whole class is graded after you confirm it.</li>
+    <li>Confirm the rubric before grading the class. Review, then export.</li>
+  </ol>
+  <div class="actions">
+    <a class="button" href="/batches/new">Start a new batch</a>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

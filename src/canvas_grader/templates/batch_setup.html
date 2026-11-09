@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Choose students{% endblock %}
+{% block body %}
+{% set step = 2 %}
+{% include "steps.html" %}
+<h1>{{ batch.assignment_column or "Choose students and model" }}</h1>
+{% if batch.error %}<p class="banner bad">{{ batch.error }}</p>{% endif %}
+<p class="lead muted">Choose how many papers the rubric is based on. After you confirm it, every student is graded again, including these papers, so the scores use one scale.</p>
+<form method="post" action="/batches/{{ batch.id }}/read">
+  <fieldset class="panel">
+    <legend>1. Assignment column</legend>
+    {% for index, header, points in columns %}
+    <label class="choice">
+      <input type="radio" name="assignment_column" value="{{ header }}" data-points="{{ points or '' }}" {% if batch.assignment_column == header or (not batch.assignment_column and loop.first) %}checked{% endif %}>
+      {{ header }}{% if points %} (out of {{ points }}){% endif %}
+    </label>
+    {% endfor %}
+    <label>Points possible
+      <input id="points" type="number" name="points_possible" min="0.01" step="0.01" value="{{ batch.points_possible or '' }}" required>
+    </label>
+    <p class="muted">Choosing a column fills in its maximum. Change it if that number is wrong.</p>
+  </fieldset>
+
+  <fieldset class="panel">
+    <legend>2. Who drafts the rubric</legend>
+    <label>Papers used to draft the rubric
+      <input id="rubric-count" type="number" name="rubric_count" min="1" max="{{ class_size }}" step="1" value="{{ rubric_count }}" required>
+    </label>
+    <p class="muted">From 1 to {{ class_size }}. Use {{ class_size }} if you want every paper to shape the rubric. Grading the class is a separate choice: pick Local here and Local again on the next page to keep everything on this computer.</p>
+    <label class="choice">
+      <input type="radio" name="rubric_provider" value="online" {% if batch.rubric_provider != 'local' %}checked{% endif %}>
+      Online model
+      <p class="muted">These page images are sent to the online model, labeled A, B, C, and so on, with no name, Canvas id, or filename.</p>
+    </label>
+    <label class="choice">
+      <input type="radio" name="rubric_provider" value="local" {% if batch.rubric_provider == 'local' %}checked{% endif %}>
+      Local model
+      <p class="muted">These papers stay on this computer and are not uploaded.</p>
+    </label>
+  </fieldset>
+
+  <fieldset class="panel">
+    <legend>3. Pick <span id="rubric-count-label">{{ rubric_count }}</span></legend>
+    <label class="filter">Filter by name or id
+      <input id="student-filter" type="search" placeholder="Type a few letters">
+    </label>
+    <div id="student-list" class="student-list">
+      {% for student in students %}
+      <label class="check">
+        <input type="checkbox" name="student_id" value="{{ student.id }}" {% if student.id in selected_ids %}checked{% endif %}>
+        <span>
+          {{ student.display_name }}
+          {% if not student.parsed %}<span class="badge warn">Filename has no student id</span>{% endif %}
+          {% if not student.matched %}<span class="badge warn">Not in the gradebook</span>{% endif %}
+          {% if student.parsed %}<span class="muted">{{ student.canvas_user_id or "" }}</span>{% endif %}
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+    <p id="pick-count" class="muted" data-required="{{ rubric_count }}">Selected {{ selected_ids|length }}. Need exactly {{ rubric_count }}.</p>
+    <button type="button" class="secondary" id="check-first">Check the first N</button>
+  </fieldset>
+  <div class="actions">
+    <button type="submit" {% if running_any %}disabled{% endif %}>Start reading the selected papers</button>
+  </div>
+  {% if running_any %}<p class="muted">Another batch is running. Wait until it finishes.</p>{% endif %}
+</form>
+<div class="later">
+  <form method="post" action="/batches/{{ batch.id }}/delete" onsubmit="return confirm('Delete this batch?');">
+    <button class="danger" type="submit">Delete this batch</button>
+  </form>
+</div>
+<script>
+  const points = document.getElementById("points");
+  const radios = document.querySelectorAll("input[name=assignment_column]");
+  function applyPoints(radio) {
+    if (radio.dataset.points) points.value = radio.dataset.points;
+  }
+  radios.forEach((radio) => {
+    radio.addEventListener("change", () => applyPoints(radio));
+    if (radio.checked && !points.value) applyPoints(radio);
+  });
+</script>
+{% endblock %}

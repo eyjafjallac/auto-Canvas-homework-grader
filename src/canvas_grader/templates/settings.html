@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<p class="lead muted">These are separate. The rubric draft defaults to online. Class grading defaults to local. An option cannot start until that connection is filled in.</p>
+<form method="post" action="/settings">
+  <section class="panel">
+    <h2>Online</h2>
+    <p class="muted">Any OpenAI-compatible vision API. The defaults are DeepSeek. Page images are sent only when you choose Online.</p>
+    <label>Address
+      <input type="url" name="online_base_url" value="{{ settings.online_base_url }}" required>
+    </label>
+    <label>Model name
+      <input type="text" name="online_model" value="{{ settings.online_model }}" required>
+    </label>
+    <label>API key
+      <input type="password" name="online_api_key" autocomplete="off" placeholder="{% if has_online_key %}Saved. Leave blank to keep it.{% else %}Paste the API key{% endif %}">
+    </label>
+    {% if has_online_key %}
+    <label class="check"><input type="checkbox" name="clear_online_key" value="1">Clear the saved key</label>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Local · LM Studio</h2>
+    <p class="muted">Load a vision model, open Developer, and click Start server. The address must include /v1.</p>
+    <label>Local address
+      <input type="url" name="local_base_url" value="{{ settings.local_base_url }}" required>
+    </label>
+    <label>Local model name
+      <input type="text" name="local_model" value="{{ settings.local_model }}" placeholder="Model id listed by LM Studio">
+    </label>
+    <label>Local key (most servers can leave this blank)
+      <input type="text" name="local_api_key" value="{{ settings.local_api_key }}">
+    </label>
+  </section>
+
+  <div class="actions">
+    <button type="submit">Save settings</button>
+    <button type="submit" class="secondary" formaction="/settings/test-online">Test online connection</button>
+    <button type="submit" class="secondary" formaction="/settings/test">Test local connection</button>
+  </div>
+  <p class="muted">A test asks that server for its model list, then sends one small generated image. Student work is not used. The online test sends that image to the address above.</p>
+</form>
+{% endblock %}
