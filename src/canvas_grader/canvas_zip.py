@@ -9,7 +9,9 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 # name_id_1{sid}.pdf — the name is lowercase letters, and the id matches the gradebook ID column.
-_LOWER_NAME_ID_SID = re.compile(r"^(?P<name>[a-z]+(?:_[a-z]+)*)_(?P<user_id>\d+)_1(?P<sid>\d+)$")
+_LOWER_NAME_ID_SID = re.compile(
+    r"^(?P<name>[a-z]+(?:_[a-z]+)*)_(?P<user_id>\d+)_1(?P<sid>\d+)$"
+)
 
 
 @dataclass(frozen=True)
@@ -109,7 +111,11 @@ def extract_submission_zip(zip_path: Path, dest: Path) -> list[StudentGroup]:
             with archive.open(info) as source, target.open("wb") as output:
                 shutil.copyfileobj(source, output)
             parsed = parse_submission_name(info.filename)
-            key = parsed.user_id if parsed.parsed and parsed.user_id else f"unparsed:{parsed.filename}"
+            key = (
+                parsed.user_id
+                if parsed.parsed and parsed.user_id
+                else f"unparsed:{parsed.filename}"
+            )
             group = groups.get(key)
             if group is None:
                 group = StudentGroup(
@@ -123,7 +129,9 @@ def extract_submission_zip(zip_path: Path, dest: Path) -> list[StudentGroup]:
             group.file_ids.append(parsed.file_id or "")
     ordered = list(groups.values())
     for group in ordered:
-        paired = sorted(zip(group.file_ids, group.files, strict=True), key=_file_sort_key)
+        paired = sorted(
+            zip(group.file_ids, group.files, strict=True), key=_file_sort_key
+        )
         group.file_ids = [item[0] for item in paired]
         group.files = [item[1] for item in paired]
     ordered.sort(key=lambda group: group.display_name.casefold())

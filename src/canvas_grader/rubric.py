@@ -52,7 +52,11 @@ Return JSON only:
         parts.append(Part(text="Model-answer pages follow."))
         parts.extend(Part(image=path) for path in answer_images)
     if student_images:
-        parts.append(Part(text=f"Student {label} pages follow. Each original page is an upper half, then a lower half."))
+        parts.append(
+            Part(
+                text=f"Student {label} pages follow. Each original page is an upper half, then a lower half."
+            )
+        )
         parts.extend(Part(image=path) for path in student_images)
     payload = chat_json(endpoint, system=_JSON_SYSTEM, parts=parts)
     return {
@@ -136,7 +140,12 @@ def criteria_match_total(criteria: list[dict], points_possible: float) -> bool:
 
 def rubric_markdown(title: str, points_possible: float, criteria: list[dict]) -> str:
     """The saved rubric as a Markdown file. Sample papers are not included."""
-    lines = [f"# {title.strip() or 'Rubric'}", "", f"Points possible: {_points(points_possible)}", ""]
+    lines = [
+        f"# {title.strip() or 'Rubric'}",
+        "",
+        f"Points possible: {_points(points_possible)}",
+        "",
+    ]
     for item in criteria:
         lines.append(f"## {item['name']}")
         lines.append(f"Max: {_points(item['max_points'])}")
@@ -156,7 +165,9 @@ def rubric_discussion_text(
     """A name-free summary the TA can paste into a chat while settling the rubric."""
     lines = [f"Assignment total {_points(points_possible)}", "", "Rubric draft"]
     for item in criteria:
-        lines.append(f"- {item['name']} ({_points(item['max_points'])}): {item['description']}")
+        lines.append(
+            f"- {item['name']} ({_points(item['max_points'])}): {item['description']}"
+        )
     lines.append("")
     lines.append("Differences across the sample (no names)")
     for paper in papers:
@@ -183,11 +194,12 @@ def _normalize_criteria(raw: object, points_possible: float) -> list[dict]:
             continue
         try:
             max_points = round(float(item.get("max_points", 0)), 2)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             max_points = 0
-        if max_points < 0:
-            max_points = 0
-        criteria.append({"name": name, "max_points": max_points, "description": description})
+        max_points = max(max_points, 0)
+        criteria.append(
+            {"name": name, "max_points": max_points, "description": description}
+        )
     if criteria and not criteria_match_total(criteria, points_possible):
         criteria = _scale_to_total(criteria, points_possible)
     return criteria
@@ -200,8 +212,13 @@ def _scale_to_total(criteria: list[dict], points_possible: float) -> list[dict]:
         scaled = [{**item, "max_points": share} for item in criteria]
     else:
         factor = float(points_possible) / current
-        scaled = [{**item, "max_points": round(float(item["max_points"]) * factor, 2)} for item in criteria]
-    drift = round(float(points_possible) - sum(float(item["max_points"]) for item in scaled), 2)
+        scaled = [
+            {**item, "max_points": round(float(item["max_points"]) * factor, 2)}
+            for item in criteria
+        ]
+    drift = round(
+        float(points_possible) - sum(float(item["max_points"]) for item in scaled), 2
+    )
     scaled[-1]["max_points"] = round(float(scaled[-1]["max_points"]) + drift, 2)
     return scaled
 

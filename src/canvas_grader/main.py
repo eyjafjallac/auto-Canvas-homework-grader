@@ -6,6 +6,7 @@ import io
 import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlencode
 
 import uvicorn
@@ -30,7 +31,12 @@ from canvas_grader.gradebook_csv import (
     load_gradebook,
 )
 from canvas_grader.grading import dump_scores, feedback_markdown
-from canvas_grader.jobs import ensure_student_pages, is_running, start_grading, start_reading
+from canvas_grader.jobs import (
+    ensure_student_pages,
+    is_running,
+    start_grading,
+    start_reading,
+)
 from canvas_grader.llm import LLMError, endpoint_for, test_endpoint
 from canvas_grader.render import (
     IMAGE_EXTENSIONS,
@@ -39,7 +45,13 @@ from canvas_grader.render import (
     TEXT_EXTENSIONS,
     prepare_answer_files,
 )
-from canvas_grader.rubric import criteria_match_total, criteria_total, dump_criteria, rubric_discussion_text, rubric_markdown
+from canvas_grader.rubric import (
+    criteria_match_total,
+    criteria_total,
+    dump_criteria,
+    rubric_discussion_text,
+    rubric_markdown,
+)
 from canvas_grader.store import (
     Batch,
     Settings,
@@ -82,9 +94,12 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(title="Homework grader", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
-templates.env.filters["points"] = lambda value: "—" if value is None else format_points(float(value))
-templates.env.globals["status_label"] = lambda status: _STATUS_LABELS.get(status, status)
-templates.env.globals["page_limit"] = MAX_SOURCE_PAGES
+templates.env.filters["points"] = lambda value: (
+    "—" if value is None else format_points(float(value))
+)
+template_globals = cast(dict[str, Any], templates.env.globals)
+template_globals["status_label"] = lambda status: _STATUS_LABELS.get(status, status)
+template_globals["page_limit"] = MAX_SOURCE_PAGES
 
 
 def main() -> None:
@@ -102,7 +117,12 @@ def home(request: Request) -> HTMLResponse:
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
     settings = get_settings()
-    return _render(request, "settings.html", settings=settings, has_online_key=bool(settings.online_api_key.strip()))
+    return _render(
+        request,
+        "settings.html",
+        settings=settings,
+        has_online_key=bool(settings.online_api_key.strip()),
+    )
 
 
 @app.post("/settings")
@@ -186,12 +206,28 @@ async def create_batch_route(
     model_answer_files: list[UploadFile] | None = File(None),
 ) -> Response:
     if not submissions.filename:
-        return _render(request, "batch_new.html", error="Upload the submission zip from Canvas.", status_code=400)
+        return _render(
+            request,
+            "batch_new.html",
+            error="Upload the submission zip from Canvas.",
+            status_code=400,
+        )
     if not gradebook.filename:
-        return _render(request, "batch_new.html", error="Upload the gradebook CSV.", status_code=400)
+        return _render(
+            request,
+            "batch_new.html",
+            error="Upload the gradebook CSV.",
+            status_code=400,
+        )
     batch = create_batch(model_answer_text.strip())
     try:
-        await _fill_batch(batch.id, submissions, gradebook, model_answer_files or [], model_answer_text)
+        await _fill_batch(
+            batch.id,
+            submissions,
+            gradebook,
+            model_answer_files or [],
+            model_answer_text,
+        )
     except Exception as exc:
         delete_batch(batch.id)
         if not isinstance(exc, (ValueError, zipfile.BadZipFile, OSError)):
@@ -200,20 +236,24 @@ async def create_batch_route(
     return _redirect(f"/batches/{batch.id}")
 
 
-@app.get("/batches/{batch_id}", response_class=HTMLResponse)
-def batch_page(request: Request, batch_id: int) -> HTMLResponse:
+@app.get("/batches/{batch_id}", response_class=HTMLResponse, response_model=None)
+def batch_page(request: Request, batch_id: int) -> HTMLResponse | RedirectResponse:
     batch = _batch_or_404(batch_id)
     students = list_students(batch_id)
     running = is_running(batch_id)
     reads_to_keep = any(student.is_pilot and student.transcript for student in students)
-    grades_to_keep = any(student.status in {"graded", "reviewed"} for student in students)
+    grades_to_keep = any(
+        student.status in {"graded", "reviewed"} for student in students
+    )
     if batch.status in {"reading", "grading"} or (running and batch.status != "review"):
         return _render(request, "batch_progress.html", batch=batch, running=running)
     if batch.status == "error" and grades_to_keep:
         return _redirect(f"/batches/{batch_id}/review")
     if batch.status == "error" and reads_to_keep and not batch.rubric_json:
         return _render(request, "batch_progress.html", batch=batch, running=False)
-    if batch.status == "rubric_ready" or (batch.status == "error" and batch.rubric_json):
+    if batch.status == "rubric_ready" or (
+        batch.status == "error" and batch.rubric_json
+    ):
         return _render(request, "batch_rubric.html", **_rubric_context(batch, students))
     if batch.status == "review":
         return _redirect(f"/batches/{batch_id}/review")
@@ -298,16 +338,33 @@ def save_rubric_route(
     if is_running(batch_id):
         return _redirect(f"/batches/{batch_id}", error="This batch is already running.")
     try:
-        criteria = _criteria_from_form(name, max_points, description, float(batch.points_possible or 0))
+        criteria = _criteria_from_form(
+            name, max_points, description, float(batch.points_possible or 0)
+        )
         _validate_provider(grade_provider)
         endpoint_for(get_settings(), grade_provider)
     except (LLMError, ValueError) as exc:
         return _redirect(f"/batches/{batch_id}", error=str(exc))
-    update_batch(batch_id, rubric_json=dump_criteria(criteria), grade_provider=grade_provider, error="")
+    update_batch(
+        batch_id,
+        rubric_json=dump_criteria(criteria),
+        grade_provider=grade_provider,
+        error="",
+    )
     if action == "save":
-        update_batch(batch_id, status="rubric_ready", job_message="Rubric updated. The class has not been graded yet.")
+        update_batch(
+            batch_id,
+            status="rubric_ready",
+            job_message="Rubric updated. The class has not been graded yet.",
+        )
         return _redirect(f"/batches/{batch_id}", notice="Rubric saved.")
-    update_batch(batch_id, status="grading", job_current=0, job_total=0, job_message="Preparing to grade")
+    update_batch(
+        batch_id,
+        status="grading",
+        job_current=0,
+        job_total=0,
+        job_message="Preparing to grade",
+    )
     try:
         start_grading(batch_id, resume=False)
     except RuntimeError as exc:
@@ -321,7 +378,12 @@ def continue_grade_route(batch_id: int) -> RedirectResponse:
     batch = _batch_or_404(batch_id)
     try:
         endpoint_for(get_settings(), batch.grade_provider)
-        update_batch(batch_id, status="grading", error="", job_message="Continuing unfinished students")
+        update_batch(
+            batch_id,
+            status="grading",
+            error="",
+            job_message="Continuing unfinished students",
+        )
         start_grading(batch_id, resume=True)
     except (LLMError, RuntimeError) as exc:
         return _redirect(f"/batches/{batch_id}/review", error=str(exc))
@@ -332,13 +394,21 @@ def continue_grade_route(batch_id: int) -> RedirectResponse:
 def reopen_rubric_route(batch_id: int) -> RedirectResponse:
     _batch_or_404(batch_id)
     if is_running(batch_id):
-        return _redirect(f"/batches/{batch_id}/review", error="This batch is already running.")
-    update_batch(batch_id, status="rubric_ready", job_message="You can edit the rubric. Confirming it regrades the class.")
+        return _redirect(
+            f"/batches/{batch_id}/review", error="This batch is already running."
+        )
+    update_batch(
+        batch_id,
+        status="rubric_ready",
+        job_message="You can edit the rubric. Confirming it regrades the class.",
+    )
     return _redirect(f"/batches/{batch_id}")
 
 
 @app.post("/batches/{batch_id}/mark-reviewed")
-def mark_reviewed_route(batch_id: int, viewed: list[str] = Form(default=[])) -> RedirectResponse:
+def mark_reviewed_route(
+    batch_id: int, viewed: list[str] = Form(default=[])
+) -> RedirectResponse:
     """Set the viewed mark from the checkboxes. Only graded students are included."""
     batch = _batch_or_404(batch_id)
     if batch.status not in {"review", "grading", "error"}:
@@ -358,11 +428,14 @@ def mark_reviewed_route(batch_id: int, viewed: list[str] = Form(default=[])) -> 
             cleared += 1
     if not marked and not cleared:
         return _redirect(f"/batches/{batch_id}/review", notice="No view marks changed.")
-    return _redirect(f"/batches/{batch_id}/review", notice=f"Saved viewed marks. {marked} marked, {cleared} cleared.")
+    return _redirect(
+        f"/batches/{batch_id}/review",
+        notice=f"Saved viewed marks. {marked} marked, {cleared} cleared.",
+    )
 
 
-@app.get("/batches/{batch_id}/review", response_class=HTMLResponse)
-def review_page(request: Request, batch_id: int) -> HTMLResponse:
+@app.get("/batches/{batch_id}/review", response_class=HTMLResponse, response_model=None)
+def review_page(request: Request, batch_id: int) -> HTMLResponse | RedirectResponse:
     batch = _batch_or_404(batch_id)
     if batch.status not in {"review", "grading", "error"}:
         return _redirect(f"/batches/{batch_id}")
@@ -418,10 +491,16 @@ def save_student_route(
     student = _student_or_404(batch_id, student_id)
     criteria = batch.criteria()
     if not criteria:
-        return _redirect(f"/batches/{batch_id}/students/{student_id}", error="There is no rubric yet.")
+        return _redirect(
+            f"/batches/{batch_id}/students/{student_id}",
+            error="There is no rubric yet.",
+        )
     if len(points) != len(criteria) or len(reason) != len(criteria):
-        return _redirect(f"/batches/{batch_id}/students/{student_id}", error="The score fields do not match the rubric. Reload the page.")
-    scores = []
+        return _redirect(
+            f"/batches/{batch_id}/students/{student_id}",
+            error="The score fields do not match the rubric. Reload the page.",
+        )
+    scores: list[dict[str, str | float]] = []
     for criterion, raw_points, raw_reason in zip(criteria, points, reason, strict=True):
         maximum = float(criterion["max_points"])
         scores.append(
@@ -432,7 +511,7 @@ def save_student_route(
                 "reason": raw_reason.strip(),
             }
         )
-    total = round(sum(item["points"] for item in scores), 2)
+    total = round(sum(float(item["points"]) for item in scores), 2)
     is_reviewed = reviewed == "1"
     update_student(
         student_id,
@@ -452,27 +531,37 @@ def save_student_route(
             if item.id != student.id and not item.reviewed
         ]
         if remaining:
-            return _redirect(f"/batches/{batch_id}/students/{remaining[0].id}", notice="Saved.")
+            return _redirect(
+                f"/batches/{batch_id}/students/{remaining[0].id}", notice="Saved."
+            )
     return _redirect(f"/batches/{batch_id}/students/{student_id}", notice="Saved.")
 
 
 @app.get("/batches/{batch_id}/students/{student_id}/pages/{index}")
 def student_page_image(batch_id: int, student_id: int, index: int) -> FileResponse:
     _student_or_404(batch_id, student_id)
-    return _image_response(pages_dir(batch_id, student_id) / f"{index:03d}.jpg", pages_dir(batch_id, student_id))
+    return _image_response(
+        pages_dir(batch_id, student_id) / f"{index:03d}.jpg",
+        pages_dir(batch_id, student_id),
+    )
 
 
 @app.get("/batches/{batch_id}/answer/{index}")
 def answer_image(batch_id: int, index: int) -> FileResponse:
     _batch_or_404(batch_id)
-    return _image_response(answer_dir(batch_id) / f"{index:03d}.jpg", answer_dir(batch_id))
+    return _image_response(
+        answer_dir(batch_id) / f"{index:03d}.jpg", answer_dir(batch_id)
+    )
 
 
-@app.get("/batches/{batch_id}/export", response_class=HTMLResponse)
-def export_page(request: Request, batch_id: int) -> HTMLResponse:
+@app.get("/batches/{batch_id}/export", response_class=HTMLResponse, response_model=None)
+def export_page(request: Request, batch_id: int) -> HTMLResponse | RedirectResponse:
     batch = _batch_or_404(batch_id)
     if batch.status != "review":
-        return _redirect(f"/batches/{batch_id}", error="Export is available after the rubric is confirmed and the class is graded.")
+        return _redirect(
+            f"/batches/{batch_id}",
+            error="Export is available after the rubric is confirmed and the class is graded.",
+        )
     included, skipped = _export_split(batch, "all")
     reviewed, _ = _export_split(batch, "reviewed")
     return _render(
@@ -491,7 +580,9 @@ def export_rubric(batch_id: int) -> Response:
     criteria = batch.criteria()
     if not criteria:
         raise HTTPException(status_code=400, detail="There is no rubric yet.")
-    text = rubric_markdown(batch.assignment_column, float(batch.points_possible or 0), criteria)
+    text = rubric_markdown(
+        batch.assignment_column, float(batch.points_possible or 0), criteria
+    )
     return Response(
         content=text.encode("utf-8"),
         media_type="text/markdown; charset=utf-8",
@@ -524,7 +615,11 @@ def export_feedback(batch_id: int) -> Response:
     used: set[str] = set()
     with zipfile.ZipFile(payload, "w") as archive:
         for student in list_students(batch_id):
-            if student.total_score is None and not student.comment and not student.transcript:
+            if (
+                student.total_score is None
+                and not student.comment
+                and not student.transcript
+            ):
                 continue
             filename = _unique_markdown_name(student, used)
             archive.writestr(
@@ -541,7 +636,9 @@ def export_feedback(batch_id: int) -> Response:
     return Response(
         content=payload.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="feedback-{batch_id}.zip"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="feedback-{batch_id}.zip"'
+        },
     )
 
 
@@ -564,12 +661,16 @@ def batch_status(batch_id: int) -> dict:
 def delete_batch_route(batch_id: int) -> RedirectResponse:
     _batch_or_404(batch_id)
     if is_running(batch_id):
-        return _redirect(f"/batches/{batch_id}", error="This batch is running and cannot be deleted.")
+        return _redirect(
+            f"/batches/{batch_id}", error="This batch is running and cannot be deleted."
+        )
     delete_batch(batch_id)
     return _redirect("/", notice="Batch deleted.")
 
 
-def _render(request: Request, name: str, status_code: int = 200, **extra: object) -> HTMLResponse:
+def _render(
+    request: Request, name: str, status_code: int = 200, **extra: object
+) -> HTMLResponse:
     context = {
         "notice": request.query_params.get("notice", ""),
         "error": request.query_params.get("error", ""),
@@ -608,7 +709,10 @@ def _test_saved_connection(
         local_api_key,
     )
     if is_running():
-        return _redirect("/settings", error="A batch is grading. Wait until it finishes before testing the connection.")
+        return _redirect(
+            "/settings",
+            error="A batch is grading. Wait until it finishes before testing the connection.",
+        )
     try:
         result = test_endpoint(endpoint_for(get_settings(), provider))
     except LLMError as exc:
@@ -665,7 +769,9 @@ async def _fill_batch(
     except ValueError as exc:
         raise ValueError(f"Could not read the gradebook: {exc}") from exc
     if not loaded.assignment_columns():
-        raise ValueError("The gradebook has no assignment column to fill. Export a CSV that includes the assignment.")
+        raise ValueError(
+            "The gradebook has no assignment column to fill. Export a CSV that includes the assignment."
+        )
     groups = extract_submission_zip(zip_path, extracted_dir(batch_id))
     if not groups:
         raise ValueError("The zip has no submission files.")
@@ -686,7 +792,9 @@ async def _fill_batch(
             raise ValueError(f"Unsupported answer file: {upload.filename}")
     answer = "\n\n".join(part for part in texts if part.strip())
     if not answer and not answer_sources:
-        raise ValueError("Paste a model answer, or upload a PDF or images of the answer.")
+        raise ValueError(
+            "Paste a model answer, or upload a PDF or images of the answer."
+        )
     prepare_answer_files(answer_sources, answer_dir(batch_id))
     update_batch(batch_id, model_answer_text=answer)
     for group in groups:
@@ -773,13 +881,17 @@ def _parse_count(value: str, total: int) -> int:
     try:
         count = int(value.strip())
     except ValueError as exc:
-        raise ValueError("The number of papers for the rubric must be a whole number.") from exc
+        raise ValueError(
+            "The number of papers for the rubric must be a whole number."
+        ) from exc
     if count < 1 or count > total:
         raise ValueError(f"Use between 1 and {total} papers for the rubric.")
     return count
 
 
-def _choose_pilots(students: list[Student], selected_ids: set[str], required: int) -> list[Student]:
+def _choose_pilots(
+    students: list[Student], selected_ids: set[str], required: int
+) -> list[Student]:
     chosen = [student for student in students if str(student.id) in selected_ids]
     if len(chosen) != required:
         raise ValueError(f"Select {required} students. {len(chosen)} are checked.")
@@ -835,16 +947,26 @@ def _criteria_from_form(
     if not (len(names) == len(max_points) == len(descriptions)):
         raise ValueError("The rubric fields are incomplete.")
     criteria = []
-    for name, raw_points, description in zip(names, max_points, descriptions, strict=True):
+    for name, raw_points, description in zip(
+        names, max_points, descriptions, strict=True
+    ):
         if not name.strip():
             continue
         try:
             points = round(float(raw_points.strip()), 2)
         except ValueError as exc:
-            raise ValueError(f'Max points for "{name.strip()}" is not a number.') from exc
+            raise ValueError(
+                f'Max points for "{name.strip()}" is not a number.'
+            ) from exc
         if points < 0:
             raise ValueError(f'Max points for "{name.strip()}" cannot be negative.')
-        criteria.append({"name": name.strip(), "max_points": points, "description": description.strip()})
+        criteria.append(
+            {
+                "name": name.strip(),
+                "max_points": points,
+                "description": description.strip(),
+            }
+        )
     if not criteria:
         raise ValueError("Add at least one rubric criterion.")
     if not criteria_match_total(criteria, points_possible):
@@ -864,10 +986,18 @@ def _rubric_context(batch: Batch, students: list[Student]) -> dict:
             update_student(student.id, error=str(exc)[:500])
     pilots = [get_student(student.id) for student in pilots]
     papers = [
-        {"label": student.pilot_label, "transcript": student.transcript, "differences": student.differences}
+        {
+            "label": student.pilot_label,
+            "transcript": student.transcript,
+            "differences": student.differences,
+        }
         for student in pilots
     ]
-    answer_count = len(list(answer_dir(batch.id).glob("*.jpg"))) if answer_dir(batch.id).is_dir() else 0
+    answer_count = (
+        len(list(answer_dir(batch.id).glob("*.jpg")))
+        if answer_dir(batch.id).is_dir()
+        else 0
+    )
     pilot_pages = {
         student.id: len(list(pages_dir(batch.id, student.id).glob("*.jpg")))
         for student in pilots
@@ -877,7 +1007,9 @@ def _rubric_context(batch: Batch, students: list[Student]) -> dict:
         "pilots": pilots,
         "pilot_pages": pilot_pages,
         "criteria": batch.criteria(),
-        "discussion": rubric_discussion_text(batch.criteria(), papers, float(batch.points_possible or 0)),
+        "discussion": rubric_discussion_text(
+            batch.criteria(), papers, float(batch.points_possible or 0)
+        ),
         "answer_count": answer_count,
         "criteria_sum": criteria_total(batch.criteria()) if batch.criteria() else 0,
         "running_any": is_running(),
@@ -920,7 +1052,14 @@ def _review_sort(students: list[Student]) -> list[Student]:
             return 2
         return 3
 
-    return sorted(students, key=lambda student: (rank(student), student.display_name.casefold(), student.id))
+    return sorted(
+        students,
+        key=lambda student: (
+            rank(student),
+            student.display_name.casefold(),
+            student.id,
+        ),
+    )
 
 
 def _export_split(batch: Batch, scope: str) -> tuple[list[Student], list[Student]]:
@@ -941,13 +1080,20 @@ def _export_split(batch: Batch, scope: str) -> tuple[list[Student], list[Student
 def _export_csv_text(batch: Batch, scope: str) -> str:
     included, _skipped = _export_split(batch, scope)
     gradebook = load_gradebook(batch_dir(batch.id) / "gradebook.csv")
-    updates = {student.canvas_user_id: format_points(float(student.total_score)) for student in included if student.canvas_user_id}
+    updates = {
+        student.canvas_user_id: format_points(student.total_score)
+        for student in included
+        if student.canvas_user_id and student.total_score is not None
+    }
     apply_scores(gradebook, batch.assignment_column, updates)
     return gradebook_csv_text(gradebook)
 
 
 def _unique_markdown_name(student: Student, used: set[str]) -> str:
-    cleaned = "".join(character if character.isalnum() or character in " _-" else "_" for character in student.display_name).strip()
+    cleaned = "".join(
+        character if character.isalnum() or character in " _-" else "_"
+        for character in student.display_name
+    ).strip()
     if not cleaned:
         cleaned = f"student-{student.id}"
     candidate = cleaned

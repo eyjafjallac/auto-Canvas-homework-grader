@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pymupdf
-
 from PIL import Image
 
 from canvas_grader.render import MAX_EDGE, prepare_submission
@@ -21,7 +20,10 @@ def test_pdf_page_becomes_two_halves(tmp_path: Path) -> None:
     assert prepared.source_page_count == 1
     assert len(prepared.image_paths) == 2
     assert not prepared.truncated
-    assert all(path.suffix == ".jpg" and path.stat().st_size > 0 for path in prepared.image_paths)
+    assert all(
+        path.suffix == ".jpg" and path.stat().st_size > 0
+        for path in prepared.image_paths
+    )
 
 
 def test_nine_page_submission_is_kept(tmp_path: Path) -> None:

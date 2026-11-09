@@ -51,7 +51,7 @@ def grade_submission(
     rubric_lines = []
     for item in criteria:
         rubric_lines.append(
-            f"- {item['name']} (max { _points(item['max_points']) }): {item.get('description', '')}"
+            f"- {item['name']} (max {_points(item['max_points'])}): {item.get('description', '')}"
         )
     user_text = f"""Grade only this one problem, then stop. Do not score any other problem.
 Score every criterion below with a number from 0 through its max. Do not invent an overall total.
@@ -84,7 +84,11 @@ Return JSON only:
         parts.append(Part(text="Model-answer pages follow."))
         parts.extend(Part(image=path) for path in answer_images)
     if student_images:
-        parts.append(Part(text="Student pages follow. Each original page is an upper half, then a lower half."))
+        parts.append(
+            Part(
+                text="Student pages follow. Each original page is an upper half, then a lower half."
+            )
+        )
         parts.extend(Part(image=path) for path in student_images)
     payload = chat_json(endpoint, system=_JSON_SYSTEM, parts=parts)
     scores = align_scores(criteria, payload.get("criteria", []))
@@ -99,7 +103,11 @@ Return JSON only:
 
 def align_scores(criteria: list[dict], returned: object) -> list[dict]:
     """Match model scores to rubric rows, then clamp each score to its maximum."""
-    rows = [item for item in returned if isinstance(item, dict)] if isinstance(returned, list) else []
+    rows = (
+        [item for item in returned if isinstance(item, dict)]
+        if isinstance(returned, list)
+        else []
+    )
     used: set[int] = set()
     aligned: list[dict] = []
     for criterion in criteria:
@@ -126,7 +134,7 @@ def align_scores(criteria: list[dict], returned: object) -> list[dict]:
         else:
             try:
                 points = float(source.get("points", 0))
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 points = 0.0
             reason = str(source.get("reason", "")).strip()
         maximum = float(criterion["max_points"])
@@ -146,7 +154,14 @@ def dump_scores(scores: list[dict]) -> str:
     return json.dumps(scores, ensure_ascii=False)
 
 
-def feedback_markdown(student_name: str, points_possible: float, total: float | None, scores: list[dict], comment: str, transcript: str) -> str:
+def feedback_markdown(
+    student_name: str,
+    points_possible: float,
+    total: float | None,
+    scores: list[dict],
+    comment: str,
+    transcript: str,
+) -> str:
     lines = [f"# {student_name}", ""]
     if total is None:
         lines.append("Total: not graded")
@@ -155,7 +170,9 @@ def feedback_markdown(student_name: str, points_possible: float, total: float | 
     lines.append("")
     for item in scores:
         lines.append(f"## {item['name']}")
-        lines.append(f"Score: {_points(item['points'])} / {_points(item['max_points'])}")
+        lines.append(
+            f"Score: {_points(item['points'])} / {_points(item['max_points'])}"
+        )
         if item.get("reason"):
             lines.append(item["reason"])
         lines.append("")
