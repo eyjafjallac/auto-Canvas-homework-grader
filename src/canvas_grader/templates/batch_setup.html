@@ -28,14 +28,14 @@
     </label>
     <p class="muted">From 1 to {{ class_size }}. Use {{ class_size }} if you want every paper to shape the rubric. Grading the class is a separate choice: pick Local here and Local again on the next page to keep everything on this computer.</p>
     <label class="choice">
-      <input type="radio" name="rubric_provider" value="online" {% if batch.rubric_provider != 'local' %}checked{% endif %}>
+      <input type="radio" name="rubric_provider" value="online"{% if batch.rubric_provider != 'local' or not local_ready %} checked{% endif %}>
       Online model
       <p class="muted">These page images are sent to the online model, labeled A, B, C, and so on, with no name, Canvas id, or filename.</p>
     </label>
     <label class="choice">
-      <input type="radio" name="rubric_provider" value="local" {% if batch.rubric_provider == 'local' %}checked{% endif %}>
+      <input type="radio" name="rubric_provider" value="local"{% if local_ready and batch.rubric_provider == 'local' %} checked{% endif %}{% if not local_ready %} disabled{% endif %}>
       Local model
-      <p class="muted">These papers stay on this computer and are not uploaded.</p>
+      <p class="muted">{% if local_ready %}These papers stay on this computer and are not uploaded.{% else %}No local model is saved. Add one on Settings to choose this.{% endif %}</p>
     </label>
   </fieldset>
 
