@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Homework grader{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=3">
-  <script src="{{ url_for('static', path='app.js') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v=7">
+  <script src="{{ url_for('static', path='app.js') }}?v=2" defer></script>
 </head>
 <body>
   <header>
@@ -17,6 +17,19 @@
     </nav>
   </header>
   <main>
+    {% if needs_setup and request.url.path != "/settings" %}
+    <section class="panel">
+      <h2>Choose a model first</h2>
+      <p>Before grading, open Settings and fill in the one connection this computer will use. The other can stay empty.</p>
+      <ul>
+        <li>No local model: paste an online API key. Leave the local model name blank.</li>
+        <li>LM Studio is installed: save the local model name. The online key can stay empty.</li>
+      </ul>
+      <div class="actions">
+        <a class="button" href="/settings">Open settings</a>
+      </div>
+    </section>
+    {% endif %}
     {% if notice %}<p class="banner ok">{{ notice }}</p>{% endif %}
     {% if error %}<p class="banner bad">{{ error }}</p>{% endif %}
     {% block body %}{% endblock %}

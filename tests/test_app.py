@@ -186,12 +186,99 @@ def test_review_highlights_scores_below_the_maximum(
     assert student.text.count('class="score-row short"') == 1
 
 
+def test_student_page_switches_original_pdf_and_split_pages(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    import json
+
+    import pymupdf
+
+    from canvas_grader.store import add_student, batch_dir, create_batch, update_batch
+
+    with TestClient(app) as client:
+        batch = create_batch("")
+        update_batch(
+            batch.id, status="review", assignment_column="HW5", points_possible=1
+        )
+        pdf_path = batch_dir(batch.id) / "extracted" / "ada.pdf"
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        document = pymupdf.open()
+        page = document.new_page()
+        page.insert_text((72, 72), "Original page")
+        document.save(pdf_path)
+        document.close()
+        student_id = add_student(
+            batch.id,
+            canvas_user_id="1",
+            display_name="Ada",
+            filename_name="ada",
+            parsed=True,
+            matched=True,
+            gradebook_row=1,
+            source_files=[str(pdf_path.resolve())],
+        )
+        outside = tmp_path / "secret.pdf"
+        outside.write_bytes(b"%PDF-1.4 secret")
+        page = client.get(f"/batches/{batch.id}/students/{student_id}")
+        original = client.get(f"/batches/{batch.id}/students/{student_id}/sources/0")
+        missing = client.get(f"/batches/{batch.id}/students/{student_id}/sources/4")
+        connection = sqlite3.connect(tmp_path / "grader.db")
+        connection.execute(
+            "UPDATE students SET source_files = ? WHERE id = ?",
+            (json.dumps([str(outside.resolve())]), student_id),
+        )
+        connection.commit()
+        connection.close()
+        blocked = client.get(f"/batches/{batch.id}/students/{student_id}/sources/0")
+    assert page.status_code == 200
+    assert "Original PDF" in page.text
+    assert "Split pages" in page.text
+    assert "review-dock" in page.text
+    assert 'data-work-pane="original"' in page.text
+    assert 'data-work-pane="chunks"' in page.text
+    assert original.status_code == 200
+    assert original.headers["content-type"].startswith("application/pdf")
+    assert "inline" in original.headers["content-disposition"]
+    assert missing.status_code == 404
+    assert blocked.status_code == 404
+
+
 def test_home_renders(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
     with TestClient(app) as client:
         response = client.get("/")
     assert response.status_code == 200
     assert "Homework grader" in response.text
+
+
+def test_home_asks_for_a_connection_until_one_is_saved(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    with TestClient(app) as client:
+        home = client.get("/")
+        settings = client.get("/settings")
+        saved = client.post(
+            "/settings",
+            data={
+                "online_base_url": "https://api.deepseek.com",
+                "online_model": "deepseek-flash",
+                "online_api_key": "sk-test",
+                "local_base_url": "http://127.0.0.1:1234/v1",
+                "local_model": "",
+                "local_api_key": "",
+            },
+            follow_redirects=True,
+        )
+        after = client.get("/")
+    assert home.status_code == 200
+    assert "Choose a model first" in home.text
+    assert "paste an online API key" in home.text
+    assert settings.status_code == 200
+    assert "Fill in one connection before the first batch." in settings.text
+    assert saved.status_code == 200
+    assert "Choose a model first" not in after.text
 
 
 def test_upload_lists_students(tmp_path: Path, monkeypatch) -> None:
@@ -217,6 +304,61 @@ def test_upload_lists_students(tmp_path: Path, monkeypatch) -> None:
     assert "Doe, John" in response.text
     assert "HW1 (10)" in response.text
     assert 'name="rubric_count"' in response.text
+
+
+def test_empty_local_model_disables_the_local_choice(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    from canvas_grader.store import Settings, create_batch, save_settings, update_batch
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("DoeJohn_111_67890_hw.pdf", b"not a real pdf")
+    gradebook = (
+        "Student,ID,SIS User ID,SIS Login ID,Section,HW1 (10)\n"
+        "Points Possible,,,,,10\n"
+        '"Doe, John",111,s1,doe,A,\n'
+    )
+    with TestClient(app) as client:
+        setup = client.post(
+            "/batches",
+            data={"model_answer_text": "The answer is 4."},
+            files={
+                "submissions": ("subs.zip", archive.getvalue(), "application/zip"),
+                "gradebook": ("grades.csv", gradebook.encode(), "text/csv"),
+            },
+        )
+        batch = create_batch("")
+        update_batch(
+            batch.id,
+            status="rubric_ready",
+            assignment_column="HW1",
+            points_possible=10,
+            grade_provider="local",
+        )
+        grade = client.get(f"/batches/{batch.id}")
+        current = get_settings()
+        save_settings(
+            Settings(
+                online_base_url=current.online_base_url,
+                online_model=current.online_model,
+                online_api_key=current.online_api_key,
+                local_base_url=current.local_base_url,
+                local_model="qwen-vl",
+                local_api_key=current.local_api_key,
+            )
+        )
+        ready = client.get(f"/batches/{batch.id}")
+    assert setup.status_code == 200
+    assert 'name="rubric_provider" value="local" disabled' in setup.text
+    assert 'name="rubric_provider" value="online" checked' in setup.text
+    assert "No local model is saved" in setup.text
+    assert grade.status_code == 200
+    assert 'name="grade_provider" value="local" disabled' in grade.text
+    assert 'name="grade_provider" value="online" checked' in grade.text
+    assert 'name="grade_provider" value="local" checked' in ready.text
+    assert 'name="grade_provider" value="local" disabled' not in ready.text
 
 
 def test_settings_page_shows_online_fields(tmp_path: Path, monkeypatch) -> None:

@@ -73,12 +73,12 @@
   <fieldset class="panel">
     <legend>Which model grades the class</legend>
     <label class="choice">
-      <input type="radio" name="grade_provider" value="local" {% if batch.grade_provider != 'online' %}checked{% endif %}>
+      <input type="radio" name="grade_provider" value="local"{% if local_ready and batch.grade_provider != 'online' %} checked{% endif %}{% if not local_ready %} disabled{% endif %}>
       Local model
-      <p class="muted">The class stays on this computer and is not uploaded. This is the default.</p>
+      <p class="muted">{% if local_ready %}The class stays on this computer and is not uploaded. This is the default.{% else %}No local model is saved. Add one on Settings to choose this.{% endif %}</p>
     </label>
     <label class="choice">
-      <input type="radio" name="grade_provider" value="online" {% if batch.grade_provider == 'online' %}checked{% endif %}>
+      <input type="radio" name="grade_provider" value="online"{% if not local_ready or batch.grade_provider == 'online' %} checked{% endif %}>
       Online model
       <p class="muted">Every student's page images are sent to the online model, without names.</p>
     </label>

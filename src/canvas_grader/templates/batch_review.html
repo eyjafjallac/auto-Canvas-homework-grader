@@ -33,7 +33,8 @@
 </form>
 {% endif %}
 <form method="post" action="/batches/{{ batch.id }}/mark-reviewed">
-<table>
+<div class="table-scroll">
+<table class="review-table">
   <thead>
     <tr><th>Viewed</th><th>Student</th><th>Score</th><th>Status</th><th></th></tr>
   </thead>
@@ -73,6 +74,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 <div class="actions">
   <button type="submit">Save viewed</button>
 </div>

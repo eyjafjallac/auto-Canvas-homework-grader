@@ -60,6 +60,11 @@ class ConnectionTest:
     message: str
 
 
+def local_ready(settings: Settings) -> bool:
+    """True when Settings has a local address and a model name."""
+    return bool(settings.local_model.strip() and settings.local_base_url.strip())
+
+
 def endpoint_for(settings: Settings, provider: str) -> Endpoint:
     if provider == "online":
         if not settings.online_api_key.strip():

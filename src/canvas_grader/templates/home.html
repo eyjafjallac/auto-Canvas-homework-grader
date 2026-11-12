@@ -9,6 +9,7 @@
 {% endif %}
 {% if running %}<p class="banner ok">A batch is already running. This computer handles one at a time.</p>{% endif %}
 {% if batches %}
+<div class="table-scroll">
 <table>
   <thead>
     <tr><th>Created</th><th>Assignment</th><th>Status</th><th></th></tr>
@@ -37,16 +38,20 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
 <section class="panel empty">
   <h2>No batches yet</h2>
   <ol>
+    {% if needs_setup %}
+    <li>Open Settings and paste an online API key, or save a local model name if LM Studio is installed.</li>
+    {% endif %}
     <li>Download the submission zip and the gradebook CSV from Canvas.</li>
     <li>Upload them and choose how many papers draft the rubric. The whole class is graded after you confirm it.</li>
     <li>Confirm the rubric before grading the class. Review, then export.</li>
   </ol>
   <div class="actions">
-    <a class="button" href="/batches/new">Start a new batch</a>
+    <a class="button{% if needs_setup %} secondary{% endif %}" href="/batches/new">Start a new batch</a>
   </div>
 </section>
 {% endif %}

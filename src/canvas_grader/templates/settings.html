@@ -2,7 +2,12 @@
 {% block title %}Settings{% endblock %}
 {% block body %}
 <h1>Settings</h1>
-<p class="lead muted">These are separate. The rubric draft defaults to online. Class grading defaults to local. An option cannot start until that connection is filled in.</p>
+<p class="lead">Fill in one connection before the first batch. The other can stay empty.</p>
+<ul>
+  <li>No local model on this computer: paste an online API key. Page images go to that provider only when you choose Online.</li>
+  <li>LM Studio is installed: save the local model name. The online key can stay empty if grading stays on this computer.</li>
+</ul>
+<p class="muted">An option with nothing saved is grayed out while you grade. Class grading uses Local only after a local model name is saved.</p>
 <form method="post" action="/settings">
   <section class="panel">
     <h2>Online</h2>

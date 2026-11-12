@@ -1,4 +1,23 @@
 document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".work").forEach((work) => {
+    const tabs = [...work.querySelectorAll("[data-work-tab]")];
+    const panes = [...work.querySelectorAll("[data-work-pane]")];
+    if (!tabs.length) return;
+    const show = (name) => {
+      tabs.forEach((tab) => {
+        const on = tab.dataset.workTab === name;
+        tab.classList.toggle("is-on", on);
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      panes.forEach((pane) => {
+        pane.hidden = pane.dataset.workPane !== name;
+      });
+    };
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => show(tab.dataset.workTab));
+    });
+  });
+
   document.querySelectorAll("input[type=file]").forEach((input) => {
     const note = document.createElement("span");
     note.className = "file-picked";

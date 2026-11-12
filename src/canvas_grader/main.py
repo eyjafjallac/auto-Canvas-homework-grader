@@ -37,7 +37,7 @@ from canvas_grader.jobs import (
     start_grading,
     start_reading,
 )
-from canvas_grader.llm import LLMError, endpoint_for, test_endpoint
+from canvas_grader.llm import LLMError, endpoint_for, local_ready, test_endpoint
 from canvas_grader.render import (
     IMAGE_EXTENSIONS,
     MAX_SOURCE_PAGES,
@@ -268,6 +268,7 @@ def batch_page(request: Request, batch_id: int) -> HTMLResponse | RedirectRespon
         class_size=len(students),
         rubric_count=len(_selected_ids(students)),
         running_any=is_running(),
+        local_ready=local_ready(get_settings()),
     )
 
 
@@ -469,6 +470,7 @@ def student_page(request: Request, batch_id: int, student_id: int) -> HTMLRespon
         student=student,
         rows=_score_rows(batch, student),
         page_count=len(list(pages_dir(batch_id, student_id).glob("*.jpg"))),
+        sources=_submission_sources(student),
         previous_id=ordered[position - 1].id if position else None,
         next_id=ordered[position + 1].id if position + 1 < len(ordered) else None,
         position=position + 1,
@@ -535,6 +537,18 @@ def save_student_route(
                 f"/batches/{batch_id}/students/{remaining[0].id}", notice="Saved."
             )
     return _redirect(f"/batches/{batch_id}/students/{student_id}", notice="Saved.")
+
+
+@app.get("/batches/{batch_id}/students/{student_id}/sources/{index}")
+def student_source_file(batch_id: int, student_id: int, index: int) -> FileResponse:
+    student = _student_or_404(batch_id, student_id)
+    path = _student_source_path(student, index)
+    return FileResponse(
+        path,
+        media_type=_source_media_type(path),
+        filename=path.name,
+        content_disposition_type="inline",
+    )
 
 
 @app.get("/batches/{batch_id}/students/{student_id}/pages/{index}")
@@ -671,9 +685,12 @@ def delete_batch_route(batch_id: int) -> RedirectResponse:
 def _render(
     request: Request, name: str, status_code: int = 200, **extra: object
 ) -> HTMLResponse:
+    settings = get_settings()
     context = {
         "notice": request.query_params.get("notice", ""),
         "error": request.query_params.get("error", ""),
+        "needs_setup": not settings.online_api_key.strip()
+        and not local_ready(settings),
         **extra,
     }
     return templates.TemplateResponse(request, name, context, status_code=status_code)
@@ -846,6 +863,47 @@ def _student_or_404(batch_id: int, student_id: int) -> Student:
     return student
 
 
+_SOURCE_MEDIA_TYPES = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".txt": "text/plain; charset=utf-8",
+    ".html": "text/plain; charset=utf-8",
+    ".htm": "text/plain; charset=utf-8",
+}
+
+
+def _submission_sources(student: Student) -> list[dict[str, str | int]]:
+    sources: list[dict[str, str | int]] = []
+    for index, raw in enumerate(student.source_files):
+        suffix = Path(raw).suffix.casefold()
+        if suffix in PDF_EXTENSIONS:
+            kind = "pdf"
+        elif suffix in IMAGE_EXTENSIONS:
+            kind = "image"
+        else:
+            kind = "other"
+        sources.append({"index": index, "name": Path(raw).name, "kind": kind})
+    return sources
+
+
+def _student_source_path(student: Student, index: int) -> Path:
+    if index < 0 or index >= len(student.source_files):
+        raise HTTPException(status_code=404, detail="File not found")
+    path = Path(student.source_files[index]).resolve()
+    root = batch_dir(student.batch_id).resolve()
+    if not path.is_file() or not path.is_relative_to(root):
+        raise HTTPException(status_code=404, detail="File not found")
+    return path
+
+
+def _source_media_type(path: Path) -> str:
+    return _SOURCE_MEDIA_TYPES.get(path.suffix.casefold(), "application/octet-stream")
+
+
 def _image_response(path: Path, root: Path) -> FileResponse:
     resolved = path.resolve()
     if not resolved.is_relative_to(root.resolve()) or not resolved.is_file():
@@ -1013,6 +1071,7 @@ def _rubric_context(batch: Batch, students: list[Student]) -> dict:
         "answer_count": answer_count,
         "criteria_sum": criteria_total(batch.criteria()) if batch.criteria() else 0,
         "running_any": is_running(),
+        "local_ready": local_ready(get_settings()),
     }
 
 
