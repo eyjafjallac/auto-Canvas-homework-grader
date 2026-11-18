@@ -3,7 +3,7 @@
 import pytest
 
 from canvas_grader.grading import problem_groups
-from canvas_grader.llm import Endpoint
+from canvas_grader.llm import Endpoint, Part
 from canvas_grader.rubric import (
     draft_rubric,
     read_submission,
@@ -59,7 +59,11 @@ def test_draft_rubric_includes_the_baseline(monkeypatch: pytest.MonkeyPatch) -> 
         captured["user_text"] = user_text
         return {
             "criteria": [
-                {"name": "Units", "max_points": 4, "description": "The number has units."}
+                {
+                    "name": "Units",
+                    "max_points": 4,
+                    "description": "The number has units.",
+                }
             ]
         }
 
@@ -107,7 +111,11 @@ def test_revise_rubric_starts_from_the_current_draft(
         return {
             "criteria": [
                 {"name": "Method", "max_points": 1, "description": "Setup."},
-                {"name": "Units", "max_points": 1, "description": "Units on the answer."},
+                {
+                    "name": "Units",
+                    "max_points": 1,
+                    "description": "Units on the answer.",
+                },
             ]
         }
 
@@ -150,8 +158,16 @@ def test_read_submission_uses_the_baseline_for_differences(
 ) -> None:
     captured: dict[str, str] = {}
 
-    def fake(endpoint, *, system, user_text="", images=None, parts=None):
-        captured["text"] = parts[0].text
+    def fake(
+        endpoint,
+        *,
+        system,
+        user_text="",
+        images=None,
+        parts: list[Part] | None = None,
+    ):
+        assert parts is not None
+        captured["text"] = parts[0].text or ""
         return {"transcript": "4", "differences": "no units", "illegible": False}
 
     monkeypatch.setattr("canvas_grader.rubric.chat_json", fake)
@@ -173,8 +189,16 @@ def test_read_submission_skips_an_empty_baseline(
 ) -> None:
     captured: dict[str, str] = {}
 
-    def fake(endpoint, *, system, user_text="", images=None, parts=None):
-        captured["text"] = parts[0].text
+    def fake(
+        endpoint,
+        *,
+        system,
+        user_text="",
+        images=None,
+        parts: list[Part] | None = None,
+    ):
+        assert parts is not None
+        captured["text"] = parts[0].text or ""
         return {"transcript": "4", "differences": "matches", "illegible": False}
 
     monkeypatch.setattr("canvas_grader.rubric.chat_json", fake)

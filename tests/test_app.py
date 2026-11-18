@@ -4,6 +4,7 @@ import io
 import sqlite3
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 
@@ -768,7 +769,7 @@ def test_rewrite_keeps_the_previous_rubric_when_the_model_fails(
             "Online model", "http://127.0.0.1:9", "key", "model"
         ),
     )
-    seen: dict[str, object] = {}
+    seen: dict[str, Any] = {}
 
     def fail(endpoint, **kwargs):
         seen.update(kwargs)

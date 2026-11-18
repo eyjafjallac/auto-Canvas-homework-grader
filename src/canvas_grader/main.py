@@ -425,7 +425,9 @@ def revise_rubric_route(
 def continue_revise_route(batch_id: int) -> RedirectResponse:
     batch = _batch_or_404(batch_id)
     if batch.status != "revising":
-        return _redirect(f"/batches/{batch_id}", error="There is no rewrite to continue.")
+        return _redirect(
+            f"/batches/{batch_id}", error="There is no rewrite to continue."
+        )
     if is_running(batch_id):
         return _redirect(f"/batches/{batch_id}", error="This batch is already running.")
     if not batch.rubric_revision.strip():
