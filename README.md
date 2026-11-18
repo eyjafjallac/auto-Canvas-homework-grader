@@ -2,6 +2,10 @@
 
 A local web app. Download a submission zip and a gradebook CSV from Canvas. The app reads the handwritten pages, drafts a rubric, and after you edit the scores it exports a CSV you can upload again. It does not use the Canvas API.
 
+The pictures below are a sample batch. The names and the page are not a real class.
+
+![Batch list](docs/images/batches.png)
+
 ## Install and start
 
 [uv](https://docs.astral.sh/uv/) needs to be installed.
@@ -14,6 +18,8 @@ uv run canvas-grader
 Open http://127.0.0.1:8765 in a browser.
 
 ## Settings
+
+![Settings. The local model name is an example.](docs/images/settings.png)
 
 The settings page has two connections:
 
@@ -37,6 +43,8 @@ Export changes only the column you chose. Other columns and the Points Possible 
 
 ## How grading works
 
+![New batch](docs/images/new-batch.png)
+
 Each batch can use online or local, and the next class can use a different choice.
 
 1. Upload the zip, the gradebook, and a model answer. Choose how many papers draft the rubric, from 1 up to the whole class. The default is 5, or everyone when the class is smaller.
@@ -44,6 +52,16 @@ Each batch can use online or local, and the next class can use a different choic
 3. Compare the original pages with the draft. To discuss it, copy the name-free summary on the page. You cannot grade the class or export scores before you confirm.
 4. When you confirm the rubric, choose local or online for the whole class. Local is the default. If you choose online, every student's page images are sent to the online model you configured, again without names.
 5. While reviewing you can change scores and comments. Unreviewed students are listed first. Then export.
+
+![Review list. Unreviewed students come first.](docs/images/review.png)
+
+The review page shows the original PDF, or the split pages the model sees. Each page is cut into an upper half and a lower half.
+
+![Switching between the original PDF and the split pages](docs/images/review.gif)
+
+![One student, with the split pages beside the scores](docs/images/student.png)
+
+![Export. The CSV changes scores. Comments are a separate zip.](docs/images/export.png)
 
 The default is online for the rubric and local for the class. If you choose local but have not filled in a model name, you cannot start.
 
