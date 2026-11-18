@@ -396,3 +396,450 @@ def test_old_settings_row_keeps_the_saved_key(tmp_path: Path, monkeypatch) -> No
     assert settings.online_api_key == "secret-key"
     assert settings.online_base_url == "https://api.deepseek.com"
     assert settings.online_model == "deepseek-flash"
+
+
+def test_old_batch_row_gains_baseline_fields(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    database = tmp_path / "grader.db"
+    connection = sqlite3.connect(database)
+    connection.execute(
+        """
+        CREATE TABLE batches (
+            id INTEGER PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            assignment_column TEXT NOT NULL DEFAULT '',
+            points_possible REAL,
+            model_answer_text TEXT NOT NULL DEFAULT '',
+            rubric_provider TEXT NOT NULL DEFAULT 'online',
+            grade_provider TEXT NOT NULL DEFAULT 'local',
+            status TEXT NOT NULL DEFAULT 'setup',
+            error TEXT NOT NULL DEFAULT '',
+            job_current INTEGER NOT NULL DEFAULT 0,
+            job_total INTEGER NOT NULL DEFAULT 0,
+            job_message TEXT NOT NULL DEFAULT '',
+            rubric_json TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    connection.execute(
+        "INSERT INTO batches (created_at, assignment_column) VALUES ('2020-01-01T00:00:00', 'HW1')"
+    )
+    connection.commit()
+    connection.close()
+    init_db()
+    from canvas_grader.store import get_batch
+
+    batch = get_batch(1)
+    assert batch.assignment_column == "HW1"
+    assert batch.rubric_guidance == ""
+    assert batch.rubric_revision == ""
+
+
+def test_baseline_stays_when_the_sample_form_is_rejected(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    from canvas_grader.store import add_student, batch_dir, create_batch
+
+    with TestClient(app) as client:
+        batch = create_batch("The answer is 4.")
+        (batch_dir(batch.id) / "gradebook.csv").write_text(
+            "Student,ID,SIS User ID,SIS Login ID,Section,HW1 (10)\n"
+            "Points Possible,,,,,10\n"
+            '"Doe, John",111,s1,doe,A,\n',
+            encoding="utf-8",
+        )
+        add_student(
+            batch.id,
+            canvas_user_id="111",
+            display_name="Doe, John",
+            filename_name="DoeJohn",
+            parsed=True,
+            matched=True,
+            gradebook_row=1,
+            source_files=[],
+        )
+        response = client.post(
+            f"/batches/{batch.id}/read",
+            data={
+                "rubric_guidance": "Units matter.",
+                "points_possible": "nope",
+                "assignment_column": "HW1 (10)",
+                "rubric_count": "1",
+                "rubric_provider": "online",
+            },
+        )
+    assert response.status_code == 200
+    assert "Points possible must be a number." in response.text
+    assert 'name="rubric_guidance"' in response.text
+    assert "Units matter." in response.text
+
+
+def test_rubric_page_can_ask_for_another_draft(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    import json
+
+    from canvas_grader.store import create_batch, update_batch
+
+    with TestClient(app) as client:
+        batch = create_batch("")
+        update_batch(
+            batch.id,
+            status="rubric_ready",
+            assignment_column="HW1",
+            points_possible=10,
+            rubric_guidance="Units are required.",
+            rubric_json=json.dumps(
+                {
+                    "criteria": [
+                        {
+                            "name": "Answer",
+                            "max_points": 10,
+                            "description": "Final number.",
+                        }
+                    ]
+                }
+            ),
+            job_message="The rubric draft is ready. Confirm it before grading the class",
+        )
+        page = client.get(f"/batches/{batch.id}")
+    assert page.status_code == 200
+    assert "Units are required." in page.text
+    assert 'name="rubric_revision"' in page.text
+    assert "Ask the model to remake this rubric" in page.text
+    assert f'formaction="/batches/{batch.id}/revise-rubric"' in page.text
+    assert "The rubric draft is ready" in page.text
+
+
+def test_remake_uses_the_draft_on_the_page(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    import json
+
+    from canvas_grader.store import (
+        Settings,
+        create_batch,
+        get_batch,
+        get_settings,
+        save_settings,
+        update_batch,
+    )
+
+    started: list[int] = []
+    monkeypatch.setattr(
+        "canvas_grader.main.start_revising", lambda batch_id: started.append(batch_id)
+    )
+    with TestClient(app) as client:
+        current = get_settings()
+        save_settings(
+            Settings(
+                online_base_url=current.online_base_url,
+                online_model=current.online_model,
+                online_api_key="test-key",
+                local_base_url=current.local_base_url,
+                local_model=current.local_model,
+                local_api_key=current.local_api_key,
+            )
+        )
+        batch = create_batch("4 N")
+        update_batch(
+            batch.id,
+            status="rubric_ready",
+            assignment_column="HW1",
+            points_possible=10,
+            rubric_provider="online",
+            rubric_json=json.dumps(
+                {
+                    "criteria": [
+                        {
+                            "name": "Answer",
+                            "max_points": 10,
+                            "description": "Final number.",
+                        }
+                    ]
+                }
+            ),
+        )
+        response = client.post(
+            f"/batches/{batch.id}/revise-rubric",
+            data={
+                "name": "Method",
+                "max_points": "6",
+                "description": "Shows the steps.",
+                "grade_provider": "online",
+                "action": "revise",
+                "rubric_guidance": "Units are required.",
+                "rubric_revision": "Give the method its own points.",
+            },
+            follow_redirects=False,
+        )
+        saved = get_batch(batch.id)
+    assert response.status_code == 303
+    assert saved.status == "revising"
+    assert saved.criteria()[0]["name"] == "Method"
+    assert saved.criteria()[0]["max_points"] == 6
+    assert saved.rubric_guidance == "Units are required."
+    assert saved.rubric_revision == "Give the method its own points."
+    assert started == [batch.id]
+
+
+def test_remake_without_a_note_keeps_the_current_rubric(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    import json
+    from urllib.parse import unquote_plus
+
+    from canvas_grader.store import create_batch, get_batch, update_batch
+
+    started: list[int] = []
+    monkeypatch.setattr(
+        "canvas_grader.main.start_revising", lambda batch_id: started.append(batch_id)
+    )
+    with TestClient(app) as client:
+        batch = create_batch("")
+        update_batch(
+            batch.id,
+            status="rubric_ready",
+            assignment_column="HW1",
+            points_possible=10,
+            rubric_json=json.dumps(
+                {
+                    "criteria": [
+                        {
+                            "name": "Answer",
+                            "max_points": 10,
+                            "description": "Final number.",
+                        }
+                    ]
+                }
+            ),
+        )
+        response = client.post(
+            f"/batches/{batch.id}/revise-rubric",
+            data={
+                "name": "Method",
+                "max_points": "10",
+                "description": "Shows the steps.",
+                "grade_provider": "online",
+                "action": "revise",
+                "rubric_guidance": "Units are required.",
+                "rubric_revision": "   ",
+            },
+            follow_redirects=False,
+        )
+        saved = get_batch(batch.id)
+    assert response.status_code == 303
+    assert "Write what should change" in unquote_plus(response.headers["location"])
+    assert saved.status == "rubric_ready"
+    assert saved.criteria()[0]["name"] == "Answer"
+    assert saved.rubric_guidance == "Units are required."
+    assert started == []
+
+
+def test_remake_keeps_edits_when_the_model_is_not_configured(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    import json
+
+    from canvas_grader.store import (
+        Settings,
+        create_batch,
+        get_batch,
+        get_settings,
+        save_settings,
+        update_batch,
+    )
+
+    def fail(batch_id: int) -> None:
+        raise AssertionError(f"rewrite started for {batch_id}")
+
+    monkeypatch.setattr("canvas_grader.main.start_revising", fail)
+    with TestClient(app) as client:
+        current = get_settings()
+        save_settings(
+            Settings(
+                online_base_url=current.online_base_url,
+                online_model=current.online_model,
+                online_api_key="",
+                local_base_url=current.local_base_url,
+                local_model=current.local_model,
+                local_api_key=current.local_api_key,
+            )
+        )
+        batch = create_batch("")
+        update_batch(
+            batch.id,
+            status="rubric_ready",
+            assignment_column="HW1",
+            points_possible=10,
+            rubric_provider="online",
+            rubric_json=json.dumps(
+                {
+                    "criteria": [
+                        {
+                            "name": "Answer",
+                            "max_points": 10,
+                            "description": "Final number.",
+                        }
+                    ]
+                }
+            ),
+        )
+        page = client.post(
+            f"/batches/{batch.id}/revise-rubric",
+            data={
+                "name": "Final answer",
+                "max_points": "10",
+                "description": "Final number with units.",
+                "grade_provider": "online",
+                "action": "revise",
+                "rubric_guidance": "Units are required.",
+                "rubric_revision": "Split the final number from the units.",
+            },
+        )
+        saved = get_batch(batch.id)
+    assert page.status_code == 200
+    assert "No online API key yet" in page.text
+    assert saved.status == "rubric_ready"
+    assert saved.criteria()[0]["name"] == "Final answer"
+    assert saved.rubric_revision == "Split the final number from the units."
+    assert 'value="Final answer"' in page.text
+
+
+def test_cancel_revise_returns_to_the_rubric(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    import json
+
+    from canvas_grader.store import create_batch, get_batch, update_batch
+
+    with TestClient(app) as client:
+        batch = create_batch("")
+        update_batch(
+            batch.id,
+            status="revising",
+            assignment_column="HW1",
+            points_possible=10,
+            rubric_json=json.dumps(
+                {
+                    "criteria": [
+                        {
+                            "name": "Answer",
+                            "max_points": 10,
+                            "description": "Final number.",
+                        }
+                    ]
+                }
+            ),
+        )
+        progress = client.get(f"/batches/{batch.id}")
+        home = client.get("/")
+        response = client.post(
+            f"/batches/{batch.id}/cancel-revise", follow_redirects=False
+        )
+        saved = get_batch(batch.id)
+    assert progress.status_code == 200
+    assert "Try the rewrite again" in progress.text
+    assert "Back to the rubric" in progress.text
+    assert "Rewriting rubric" in home.text
+    assert response.status_code == 303
+    assert saved.status == "rubric_ready"
+
+
+def test_rewrite_keeps_the_previous_rubric_when_the_model_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("CANVAS_GRADER_DATA", str(tmp_path))
+    import json
+
+    from canvas_grader.jobs import _revise
+    from canvas_grader.llm import Endpoint, LLMError
+    from canvas_grader.store import (
+        add_student,
+        create_batch,
+        get_batch,
+        update_batch,
+        update_student,
+    )
+
+    monkeypatch.setattr(
+        "canvas_grader.jobs.endpoint_for",
+        lambda settings, provider: Endpoint(
+            "Online model", "http://127.0.0.1:9", "key", "model"
+        ),
+    )
+    seen: dict[str, object] = {}
+
+    def fail(endpoint, **kwargs):
+        seen.update(kwargs)
+        raise LLMError("offline")
+
+    monkeypatch.setattr("canvas_grader.jobs.revise_rubric", fail)
+    with TestClient(app) as client:
+        batch = create_batch("4 N")
+        update_batch(
+            batch.id,
+            status="revising",
+            assignment_column="HW1",
+            points_possible=10,
+            rubric_provider="online",
+            rubric_guidance="Units are required.",
+            rubric_revision="Give units their own criterion.",
+            rubric_json=json.dumps(
+                {
+                    "criteria": [
+                        {
+                            "name": "Answer",
+                            "max_points": 10,
+                            "description": "Final number.",
+                        }
+                    ]
+                }
+            ),
+        )
+        student_id = add_student(
+            batch.id,
+            canvas_user_id="1",
+            display_name="Ada",
+            filename_name="ada",
+            parsed=True,
+            matched=True,
+            gradebook_row=1,
+            source_files=[],
+        )
+        update_student(
+            student_id,
+            is_pilot=True,
+            pilot_label="A",
+            transcript="4",
+            differences="no units",
+            status="read",
+        )
+        _revise(batch.id)
+        failed = get_batch(batch.id)
+
+        def succeed(endpoint, **kwargs):
+            return [
+                {
+                    "name": "Units",
+                    "max_points": 10,
+                    "description": "The number has units.",
+                }
+            ]
+
+        monkeypatch.setattr("canvas_grader.jobs.revise_rubric", succeed)
+        update_batch(batch.id, status="revising", error="")
+        _revise(batch.id)
+        done = get_batch(batch.id)
+        page = client.get(f"/batches/{batch.id}")
+    assert failed.status == "rubric_ready"
+    assert failed.criteria()[0]["name"] == "Answer"
+    assert "offline" in failed.error
+    assert seen["revision_notes"] == "Give units their own criterion."
+    assert seen["guidance"] == "Units are required."
+    assert seen["current_criteria"][0]["name"] == "Answer"
+    assert seen["papers"][0]["label"] == "A"
+    assert done.status == "rubric_ready"
+    assert done.error == ""
+    assert done.criteria()[0]["name"] == "Units"
+    assert "started from the previous one" in page.text

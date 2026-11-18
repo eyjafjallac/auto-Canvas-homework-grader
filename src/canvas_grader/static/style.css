@@ -333,7 +333,7 @@ td .button { white-space: nowrap; }
 
 .badge.ok, .badge.status-review { background: #e5f2ea; }
 
-.badge.status-reading, .badge.status-grading { background: #f6ead0; }
+.badge.status-reading, .badge.status-grading, .badge.status-revising { background: #f6ead0; }
 
 .badge.status-rubric_ready { background: #e4eef3; }
 
@@ -369,7 +369,7 @@ td .button { white-space: nowrap; }
 
 .review {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  grid-template-columns: minmax(0, 0.9fr) minmax(480px, 1.25fr);
   gap: 1rem;
   align-items: stretch;
 }
@@ -382,6 +382,8 @@ body:has(.review) {
 }
 
 body:has(.review) main {
+  width: calc(100% - 1.5rem);
+  max-width: none;
   flex: 1 1 auto;
   min-height: 0;
   margin-bottom: 0.75rem;
@@ -603,6 +605,7 @@ details summary { cursor: pointer; font-weight: 650; }
     overflow: auto;
   }
   body:has(.review) main {
+    width: min(1080px, calc(100% - 2rem));
     display: block;
     overflow: visible;
   }

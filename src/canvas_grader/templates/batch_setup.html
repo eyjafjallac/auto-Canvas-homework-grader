@@ -22,7 +22,15 @@
   </fieldset>
 
   <fieldset class="panel">
-    <legend>2. Who drafts the rubric</legend>
+    <legend>2. Baseline for the rubric</legend>
+    <label>Notes for the model
+      <textarea name="rubric_guidance" placeholder="Full credit needs a labeled diagram and the final number with units. A right method with a wrong number is partial credit. Ignore handwriting.">{{ batch.rubric_guidance }}</textarea>
+    </label>
+    <p class="muted">Optional. This is sent with the sample papers when the rubric is drafted. Use it for the standard: what full credit requires, what is partial, and what to ignore. Leave it blank to use only the model answer and the papers.</p>
+  </fieldset>
+
+  <fieldset class="panel">
+    <legend>3. Who drafts the rubric</legend>
     <label>Papers used to draft the rubric
       <input id="rubric-count" type="number" name="rubric_count" min="1" max="{{ class_size }}" step="1" value="{{ rubric_count }}" required>
     </label>
@@ -40,7 +48,7 @@
   </fieldset>
 
   <fieldset class="panel">
-    <legend>3. Pick <span id="rubric-count-label">{{ rubric_count }}</span></legend>
+    <legend>4. Pick <span id="rubric-count-label">{{ rubric_count }}</span></legend>
     <label class="filter">Filter by name or id
       <input id="student-filter" type="search" placeholder="Type a few letters">
     </label>
