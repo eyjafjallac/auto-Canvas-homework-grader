@@ -18,6 +18,7 @@ def read_submission(
     student_text: str,
     model_answer_text: str,
     answer_images: list[Path],
+    guidance: str = "",
 ) -> dict:
     """Transcribe one submission and note how it differs from the model answer.
 
@@ -29,7 +30,7 @@ The student is labeled only as {label}. Do not guess a name.
 Model answer:
 {_clip(model_answer_text, 12000) or "(no written model answer; use the model-answer images if present)"}
 
-The images are ordered like this:
+{_baseline_block(guidance, "Baseline from the teaching assistant. Use it only when you describe differences. The transcript must stay a faithful reading of the student's pages and must not be rewritten to match this baseline.")}The images are ordered like this:
 1. Model-answer page halves, if any.
 2. A line that says the student pages start.
 3. Student page halves, upper half then lower half for each original page.
@@ -87,34 +88,72 @@ def draft_rubric(
     points_possible: float,
     model_answer_text: str,
     papers: list[dict],
+    guidance: str = "",
 ) -> list[dict]:
     """Turn the reads into criteria whose points sum to the assignment total."""
-    blocks = []
-    for paper in papers:
-        blocks.append(
-            "\n".join(
-                [
-                    f"Student {paper['label']}",
-                    "Transcript:",
-                    _clip(paper.get("transcript", ""), 8000),
-                    "Differences from the model answer:",
-                    _clip(paper.get("differences", ""), 4000),
-                ]
-            )
-        )
     points_text = _points(points_possible)
     user_text = f"""Draft a grading rubric a teaching assistant can apply consistently.
 Points possible: {points_text}
 The max_points of the criteria must sum exactly to {points_text}. Use at most 8 criteria.
 
-Model answer:
+{_baseline_block(guidance, "Baseline from the teaching assistant. Treat this as the standard for full credit, partial credit, and what to ignore. Use the submissions for cases this baseline does not mention.")}Model answer:
 {_clip(model_answer_text, 12000) or "(see the differences below)"}
 
 Anonymized submissions:
-{chr(10).join(blocks)}
+{_paper_blocks(papers)}
 
 Base the criteria on differences you actually saw, including partial credit.
 Write names and descriptions in the language of the model answer. If the model answer has no clear language, use Traditional Chinese.
+
+Return JSON only:
+{{
+  "criteria": [
+    {{"name": "", "max_points": 0, "description": ""}}
+  ]
+}}
+"""
+    payload = chat_json(endpoint, system=_JSON_SYSTEM, user_text=user_text, images=None)
+    criteria = _normalize_criteria(payload.get("criteria", []), points_possible)
+    if not criteria:
+        raise LLMError("The model did not return rubric criteria.")
+    return criteria
+
+
+def revise_rubric(
+    endpoint: Endpoint,
+    *,
+    points_possible: float,
+    model_answer_text: str,
+    papers: list[dict],
+    current_criteria: list[dict],
+    revision_notes: str,
+    guidance: str = "",
+) -> list[dict]:
+    """Rewrite the current draft. The notes say what the teaching assistant wants changed."""
+    notes = revision_notes.strip()
+    if not notes:
+        raise ValueError("Write what should change before asking for another draft.")
+    if not current_criteria:
+        raise ValueError("There is no rubric to revise.")
+    points_text = _points(points_possible)
+    user_text = f"""Revise the grading rubric below. Start from this draft. Do not discard a criterion unless the notes say to remove or replace it, or it conflicts with the baseline.
+Points possible: {points_text}
+The max_points of the criteria must sum exactly to {points_text}. Use at most 8 criteria.
+
+Current rubric:
+{_criteria_lines(current_criteria)}
+
+What the teaching assistant wants changed:
+{_clip(notes, 6000)}
+
+{_baseline_block(guidance, "Baseline from the teaching assistant. Treat this as the standard for full credit, partial credit, and what to ignore.")}Model answer:
+{_clip(model_answer_text, 12000) or "(see the differences below)"}
+
+Anonymized submissions:
+{_paper_blocks(papers)}
+
+Keep the point of each criterion that the notes do not mention.
+Write names and descriptions in the language of the current rubric. If the notes ask for another language, follow the notes.
 
 Return JSON only:
 {{
@@ -221,6 +260,39 @@ def _scale_to_total(criteria: list[dict], points_possible: float) -> list[dict]:
     )
     scaled[-1]["max_points"] = round(float(scaled[-1]["max_points"]) + drift, 2)
     return scaled
+
+
+def _paper_blocks(papers: list[dict]) -> str:
+    blocks = []
+    for paper in papers:
+        blocks.append(
+            "\n".join(
+                [
+                    f"Student {paper['label']}",
+                    "Transcript:",
+                    _clip(paper.get("transcript", ""), 8000),
+                    "Differences from the model answer:",
+                    _clip(paper.get("differences", ""), 4000),
+                ]
+            )
+        )
+    return "\n".join(blocks)
+
+
+def _criteria_lines(criteria: list[dict]) -> str:
+    lines = []
+    for item in criteria:
+        lines.append(
+            f"- {item['name']} ({_points(item['max_points'])}): {item.get('description', '')}"
+        )
+    return "\n".join(lines)
+
+
+def _baseline_block(guidance: str, lead: str) -> str:
+    text = _clip(guidance, 6000)
+    if not text:
+        return ""
+    return f"{lead}\n{text}\n\n"
 
 
 def _clip(value: str, limit: int) -> str:

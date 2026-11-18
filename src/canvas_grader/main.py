@@ -36,6 +36,7 @@ from canvas_grader.jobs import (
     is_running,
     start_grading,
     start_reading,
+    start_revising,
 )
 from canvas_grader.llm import LLMError, endpoint_for, local_ready, test_endpoint
 from canvas_grader.render import (
@@ -77,6 +78,7 @@ from canvas_grader.store import (
 _STATUS_LABELS = {
     "setup": "Choose students",
     "reading": "Reading",
+    "revising": "Rewriting rubric",
     "rubric_ready": "Confirm rubric",
     "grading": "Grading",
     "review": "Needs review",
@@ -245,7 +247,9 @@ def batch_page(request: Request, batch_id: int) -> HTMLResponse | RedirectRespon
     grades_to_keep = any(
         student.status in {"graded", "reviewed"} for student in students
     )
-    if batch.status in {"reading", "grading"} or (running and batch.status != "review"):
+    if batch.status in {"reading", "grading", "revising"} or (
+        running and batch.status != "review"
+    ):
         return _render(request, "batch_progress.html", batch=batch, running=running)
     if batch.status == "error" and grades_to_keep:
         return _redirect(f"/batches/{batch_id}/review")
@@ -280,10 +284,13 @@ def start_read_route(
     rubric_provider: str = Form("online"),
     assignment_column: str = Form(""),
     points_possible: str = Form(""),
+    rubric_guidance: str = Form(""),
 ) -> RedirectResponse:
     batch = _batch_or_404(batch_id)
     if is_running(batch_id):
         return _redirect(f"/batches/{batch_id}", error="This batch is already running.")
+    guidance = rubric_guidance.strip()
+    update_batch(batch_id, rubric_guidance=guidance)
     students = list_students(batch_id)
     try:
         points = _parse_points(points_possible)
@@ -300,6 +307,8 @@ def start_read_route(
         assignment_column=assignment_column,
         points_possible=points,
         rubric_provider=rubric_provider,
+        rubric_guidance=guidance,
+        rubric_revision="",
         status="reading",
         error="",
         rubric_json="",
@@ -333,11 +342,21 @@ def save_rubric_route(
     max_points: list[str] = Form(default=[]),
     description: list[str] = Form(default=[]),
     grade_provider: str = Form("local"),
-    action: str = Form("grade"),
+    action: str = Form("save"),
+    rubric_guidance: str = Form(""),
+    rubric_revision: str = Form(""),
 ) -> RedirectResponse:
     batch = _batch_or_404(batch_id)
     if is_running(batch_id):
         return _redirect(f"/batches/{batch_id}", error="This batch is already running.")
+    guidance = rubric_guidance.strip()
+    notes = rubric_revision.strip()
+    if action == "revise":
+        return _revise_from_form(
+            batch, name, max_points, description, grade_provider, guidance, notes
+        )
+    if action != "grade":
+        action = "save"
     try:
         criteria = _criteria_from_form(
             name, max_points, description, float(batch.points_possible or 0)
@@ -345,11 +364,14 @@ def save_rubric_route(
         _validate_provider(grade_provider)
         endpoint_for(get_settings(), grade_provider)
     except (LLMError, ValueError) as exc:
+        update_batch(batch_id, rubric_guidance=guidance, rubric_revision=notes)
         return _redirect(f"/batches/{batch_id}", error=str(exc))
     update_batch(
         batch_id,
         rubric_json=dump_criteria(criteria),
         grade_provider=grade_provider,
+        rubric_guidance=guidance,
+        rubric_revision=notes,
         error="",
     )
     if action == "save":
@@ -371,6 +393,85 @@ def save_rubric_route(
     except RuntimeError as exc:
         update_batch(batch_id, status="rubric_ready", job_message="")
         return _redirect(f"/batches/{batch_id}", error=str(exc))
+    return _redirect(f"/batches/{batch_id}")
+
+
+@app.post("/batches/{batch_id}/revise-rubric")
+def revise_rubric_route(
+    batch_id: int,
+    name: list[str] = Form(default=[]),
+    max_points: list[str] = Form(default=[]),
+    description: list[str] = Form(default=[]),
+    grade_provider: str = Form("local"),
+    rubric_guidance: str = Form(""),
+    rubric_revision: str = Form(""),
+) -> RedirectResponse:
+    """Ask the model for another rubric. This route never starts grading."""
+    batch = _batch_or_404(batch_id)
+    if is_running(batch_id):
+        return _redirect(f"/batches/{batch_id}", error="This batch is already running.")
+    return _revise_from_form(
+        batch,
+        name,
+        max_points,
+        description,
+        grade_provider,
+        rubric_guidance.strip(),
+        rubric_revision.strip(),
+    )
+
+
+@app.post("/batches/{batch_id}/continue-revise")
+def continue_revise_route(batch_id: int) -> RedirectResponse:
+    batch = _batch_or_404(batch_id)
+    if batch.status != "revising":
+        return _redirect(
+            f"/batches/{batch_id}", error="There is no rewrite to continue."
+        )
+    if is_running(batch_id):
+        return _redirect(f"/batches/{batch_id}", error="This batch is already running.")
+    if not batch.rubric_revision.strip():
+        update_batch(batch_id, status="rubric_ready", job_message="")
+        return _redirect(
+            f"/batches/{batch_id}",
+            error="Write what should change before asking for another draft.",
+        )
+    if not batch.criteria():
+        update_batch(batch_id, status="rubric_ready", job_message="")
+        return _redirect(f"/batches/{batch_id}", error="There is no rubric to revise.")
+    try:
+        endpoint_for(get_settings(), batch.rubric_provider)
+    except LLMError as exc:
+        return _redirect(f"/batches/{batch_id}", error=str(exc))
+    update_batch(
+        batch_id,
+        status="revising",
+        error="",
+        job_current=0,
+        job_total=1,
+        job_message="Preparing to rewrite the rubric",
+    )
+    try:
+        start_revising(batch_id)
+    except RuntimeError as exc:
+        update_batch(batch_id, status="rubric_ready", job_message="")
+        return _redirect(f"/batches/{batch_id}", error=str(exc))
+    return _redirect(f"/batches/{batch_id}")
+
+
+@app.post("/batches/{batch_id}/cancel-revise")
+def cancel_revise_route(batch_id: int) -> RedirectResponse:
+    batch = _batch_or_404(batch_id)
+    if is_running(batch_id):
+        return _redirect(f"/batches/{batch_id}", error="This batch is already running.")
+    if batch.status != "revising":
+        return _redirect(f"/batches/{batch_id}")
+    update_batch(
+        batch_id,
+        status="rubric_ready",
+        error="",
+        job_message="Kept the previous rubric.",
+    )
     return _redirect(f"/batches/{batch_id}")
 
 
@@ -996,11 +1097,67 @@ def _selected_ids(students: list[Student]) -> set[int]:
     return {student.id for student in pool[:5]}
 
 
+def _revise_from_form(
+    batch: Batch,
+    names: list[str],
+    max_points: list[str],
+    descriptions: list[str],
+    grade_provider: str,
+    guidance: str,
+    notes: str,
+) -> RedirectResponse:
+    """Save the draft on the page and ask the same model for another rubric."""
+    batch_id = batch.id
+    update_batch(batch_id, rubric_guidance=guidance, rubric_revision=notes)
+    if not notes:
+        return _redirect(
+            f"/batches/{batch_id}",
+            error="Write what should change before asking for another draft.",
+        )
+    try:
+        criteria = _criteria_from_form(
+            names,
+            max_points,
+            descriptions,
+            float(batch.points_possible or 0),
+            require_total=False,
+        )
+    except ValueError as exc:
+        return _redirect(f"/batches/{batch_id}", error=str(exc))
+    if grade_provider in {"online", "local"}:
+        update_batch(
+            batch_id,
+            rubric_json=dump_criteria(criteria),
+            grade_provider=grade_provider,
+        )
+    else:
+        update_batch(batch_id, rubric_json=dump_criteria(criteria))
+    try:
+        endpoint_for(get_settings(), batch.rubric_provider)
+    except LLMError as exc:
+        return _redirect(f"/batches/{batch_id}", error=str(exc))
+    update_batch(
+        batch_id,
+        status="revising",
+        error="",
+        job_current=0,
+        job_total=1,
+        job_message="Preparing to rewrite the rubric",
+    )
+    try:
+        start_revising(batch_id)
+    except RuntimeError as exc:
+        update_batch(batch_id, status="rubric_ready", job_message="")
+        return _redirect(f"/batches/{batch_id}", error=str(exc))
+    return _redirect(f"/batches/{batch_id}")
+
+
 def _criteria_from_form(
     names: list[str],
     max_points: list[str],
     descriptions: list[str],
     points_possible: float,
+    require_total: bool = True,
 ) -> list[dict]:
     if not (len(names) == len(max_points) == len(descriptions)):
         raise ValueError("The rubric fields are incomplete.")
@@ -1027,7 +1184,7 @@ def _criteria_from_form(
         )
     if not criteria:
         raise ValueError("Add at least one rubric criterion.")
-    if not criteria_match_total(criteria, points_possible):
+    if require_total and not criteria_match_total(criteria, points_possible):
         raise ValueError(
             f"Criterion points total {format_points(criteria_total(criteria))}, but they must equal the assignment total {format_points(points_possible)}."
         )

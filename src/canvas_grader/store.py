@@ -35,6 +35,8 @@ _BATCH_FIELDS = {
     "job_total",
     "job_message",
     "rubric_json",
+    "rubric_guidance",
+    "rubric_revision",
 }
 
 _STUDENT_FIELDS = {
@@ -83,6 +85,8 @@ class Batch:
     job_total: int
     job_message: str
     rubric_json: str
+    rubric_guidance: str
+    rubric_revision: str
 
     def criteria(self) -> list[dict[str, Any]]:
         if not self.rubric_json:
@@ -152,7 +156,9 @@ def init_db() -> None:
                 job_current INTEGER NOT NULL DEFAULT 0,
                 job_total INTEGER NOT NULL DEFAULT 0,
                 job_message TEXT NOT NULL DEFAULT '',
-                rubric_json TEXT NOT NULL DEFAULT ''
+                rubric_json TEXT NOT NULL DEFAULT '',
+                rubric_guidance TEXT NOT NULL DEFAULT '',
+                rubric_revision TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS students (
                 id INTEGER PRIMARY KEY,
@@ -182,6 +188,7 @@ def init_db() -> None:
             """
         )
         _migrate_settings(conn)
+        _migrate_batches(conn)
         row = conn.execute("SELECT id FROM settings WHERE id = 1").fetchone()
         if row is None:
             online_key = os.environ.get("ONLINE_API_KEY") or os.environ.get(
@@ -243,6 +250,19 @@ def save_settings(settings: Settings) -> None:
                 settings.local_model,
                 settings.local_api_key,
             ),
+        )
+
+
+def _migrate_batches(conn: sqlite3.Connection) -> None:
+    """Add the baseline and rewrite notes without dropping a saved rubric."""
+    names = {row["name"] for row in conn.execute("PRAGMA table_info(batches)")}
+    if "rubric_guidance" not in names:
+        conn.execute(
+            "ALTER TABLE batches ADD COLUMN rubric_guidance TEXT NOT NULL DEFAULT ''"
+        )
+    if "rubric_revision" not in names:
+        conn.execute(
+            "ALTER TABLE batches ADD COLUMN rubric_revision TEXT NOT NULL DEFAULT ''"
         )
 
 
@@ -445,6 +465,8 @@ def _batch_from_row(row: sqlite3.Row) -> Batch:
         job_total=row["job_total"],
         job_message=row["job_message"],
         rubric_json=row["rubric_json"],
+        rubric_guidance=row["rubric_guidance"],
+        rubric_revision=row["rubric_revision"],
     )
 
 

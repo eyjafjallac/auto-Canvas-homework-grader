@@ -19,6 +19,7 @@
     {% set open_label = {
       "setup": "Continue setup",
       "reading": "View progress",
+      "revising": "View progress",
       "rubric_ready": "Confirm rubric",
       "grading": "View progress",
       "review": "Review",
@@ -47,8 +48,8 @@
     <li>Open Settings and paste an online API key, or save a local model name if LM Studio is installed.</li>
     {% endif %}
     <li>Download the submission zip and the gradebook CSV from Canvas.</li>
-    <li>Upload them and choose how many papers draft the rubric. The whole class is graded after you confirm it.</li>
-    <li>Confirm the rubric before grading the class. Review, then export.</li>
+    <li>Upload them, write a baseline if you have one, and choose how many papers draft the rubric. The whole class is graded after you confirm it.</li>
+    <li>Confirm the rubric, or ask for another draft from that one, before grading the class. Review, then export.</li>
   </ol>
   <div class="actions">
     <a class="button{% if needs_setup %} secondary{% endif %}" href="/batches/new">Start a new batch</a>

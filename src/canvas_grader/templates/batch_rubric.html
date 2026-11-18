@@ -5,7 +5,8 @@
 {% include "steps.html" %}
 <h1>{{ batch.assignment_column }}</h1>
 {% if batch.error %}<p class="banner bad">{{ batch.error }}</p>{% endif %}
-<p class="lead muted">Points possible {{ batch.points_possible|points }}. These samples only set the standard. They are not written into the grade CSV.</p>
+<p class="lead muted">Points possible {{ batch.points_possible|points }}. These samples only set the standard. They are not written into the grade CSV. If this draft is off, ask the model to remake it. That stays on this page. Grading starts only from the button below.</p>
+{% if batch.job_message and not batch.error %}<p class="muted">{{ batch.job_message }}</p>{% endif %}
 
 {% if answer_count %}
 <details class="panel">
@@ -43,6 +44,7 @@
 {% endfor %}
 
 <form method="post" action="/batches/{{ batch.id }}/rubric">
+  <button type="submit" name="action" value="save" hidden>Save only</button>
   <fieldset class="panel">
     <legend>Rubric</legend>
     <p class="sum-line">Current total <strong id="criteria-sum" data-target="{{ batch.points_possible or 0 }}">{{ criteria_sum|points }}</strong>. It must equal {{ batch.points_possible|points }}.</p>
@@ -66,9 +68,28 @@
     <button type="button" class="secondary" id="add-criterion">Add criterion</button>
   </fieldset>
 
+  <fieldset class="panel">
+    <legend>Baseline</legend>
+    <label>Notes the model should follow
+      <textarea name="rubric_guidance" placeholder="Full credit needs a labeled diagram and the final number with units. A right method with a wrong number is partial credit.">{{ batch.rubric_guidance }}</textarea>
+    </label>
+    <p class="muted">Saved with the rubric. The first draft and a remake both use this text.</p>
+  </fieldset>
+
   <label>Summary for discussion (no names; copy the whole block)
     <textarea readonly>{{ discussion }}</textarea>
   </label>
+
+  <fieldset class="panel">
+    <legend>Ask the model to remake this rubric</legend>
+    <label>What should change
+      <textarea name="rubric_revision" placeholder="Keep problem 1. Split problem 2 into method and final answer, and move 2 points onto the method.">{{ batch.rubric_revision }}</textarea>
+    </label>
+    <p class="muted">The model rewrites the rubric on this page, including edits, from the same sample papers. You come back here to read the new draft. Grading does not start.</p>
+    <div class="actions">
+      <button type="submit" formaction="/batches/{{ batch.id }}/revise-rubric" formmethod="post" onclick="return confirm('Ask the model to remake this rubric from the draft on this page? Grading will not start.');" {% if running_any %}disabled{% endif %}>Ask the model to remake this rubric</button>
+    </div>
+  </fieldset>
 
   <fieldset class="panel">
     <legend>Which model grades the class</legend>
@@ -88,7 +109,7 @@
     <button type="submit" class="secondary" name="action" value="save">Save only</button>
     {% if criteria %}<a class="button secondary" href="/batches/{{ batch.id }}/rubric.md">Download rubric</a>{% endif %}
   </div>
-  <p class="muted">The total must equal the points possible before grading. Saving does not start grading. Download uses the last saved rubric.</p>
+  <p class="muted">The total must equal the points possible before grading. Saving does not start grading. Download uses the last saved rubric. Asking for a remake posts to a different address and only rewrites the rubric.</p>
 </form>
 
 <template id="criterion-template">

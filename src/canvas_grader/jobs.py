@@ -17,6 +17,7 @@ from canvas_grader.rubric import (
     draft_rubric,
     dump_criteria,
     read_submission,
+    revise_rubric,
     transcribe_model_answer,
 )
 from canvas_grader.store import (
@@ -44,6 +45,11 @@ def is_running(batch_id: int | None = None) -> bool:
 def start_reading(batch_id: int) -> None:
     endpoint_for(get_settings(), get_batch(batch_id).rubric_provider)
     _start(batch_id, lambda: _read(batch_id))
+
+
+def start_revising(batch_id: int) -> None:
+    endpoint_for(get_settings(), get_batch(batch_id).rubric_provider)
+    _start(batch_id, lambda: _revise(batch_id))
 
 
 def start_grading(batch_id: int, *, resume: bool) -> None:
@@ -111,6 +117,7 @@ def _read(batch_id: int) -> None:
                 student_text=prepared.text,
                 model_answer_text=answer_text,
                 answer_images=answer_images,
+                guidance=batch.rubric_guidance,
             )
             update_student(
                 current.id,
@@ -142,6 +149,7 @@ def _read(batch_id: int) -> None:
             points_possible=float(batch.points_possible or 0),
             model_answer_text=answer_text,
             papers=papers,
+            guidance=batch.rubric_guidance,
         )
     except Exception as exc:
         update_batch(
@@ -157,6 +165,79 @@ def _read(batch_id: int) -> None:
         status="rubric_ready",
         error="",
         job_message="The rubric draft is ready. Confirm it before grading the class",
+    )
+
+
+def _revise(batch_id: int) -> None:
+    """Replace the rubric with a new draft that starts from the current one."""
+    batch = get_batch(batch_id)
+    criteria = batch.criteria()
+    notes = batch.rubric_revision.strip()
+    if not notes:
+        update_batch(
+            batch_id,
+            status="rubric_ready",
+            error="Write what should change before asking for another draft.",
+            job_message="Could not rewrite the rubric",
+        )
+        return
+    if not criteria:
+        update_batch(
+            batch_id,
+            status="rubric_ready",
+            error="There is no rubric to revise.",
+            job_message="Could not rewrite the rubric",
+        )
+        return
+    pilots = [student for student in list_students(batch_id) if student.is_pilot]
+    pilots.sort(key=lambda student: student.pilot_label)
+    papers = [
+        _paper(student.pilot_label, student.transcript, student.differences)
+        for student in pilots
+        if student.transcript or student.differences
+    ]
+    if not papers:
+        update_batch(
+            batch_id,
+            status="rubric_ready",
+            error="None of the sample papers have a transcript, so the rubric cannot be rewritten from them.",
+            job_message="Could not rewrite the rubric",
+        )
+        return
+    try:
+        endpoint = endpoint_for(get_settings(), batch.rubric_provider)
+        answer_text, _answer_images = _answer_for_students(batch_id, endpoint)
+        update_batch(
+            batch_id,
+            job_current=0,
+            job_total=1,
+            job_message="Rewriting the rubric from the current draft",
+        )
+        revised = revise_rubric(
+            endpoint,
+            points_possible=float(batch.points_possible or 0),
+            model_answer_text=answer_text,
+            papers=papers,
+            current_criteria=criteria,
+            guidance=batch.rubric_guidance,
+            revision_notes=notes,
+        )
+    except Exception as exc:
+        update_batch(
+            batch_id,
+            status="rubric_ready",
+            error=_short(exc),
+            job_message="Could not rewrite the rubric",
+        )
+        return
+    update_batch(
+        batch_id,
+        rubric_json=dump_criteria(revised),
+        status="rubric_ready",
+        error="",
+        job_current=1,
+        job_total=1,
+        job_message="A new rubric draft is ready. It started from the previous one.",
     )
 
 

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}In progress{% endblock %}
 {% block body %}
-{% set step = 4 if batch.status == "grading" else 2 %}
+{% set step = 4 if batch.status == "grading" else (3 if batch.status == "revising" else 2) %}
 {% include "steps.html" %}
 <h1>{{ batch.assignment_column or "In progress" }}</h1>
 <section id="progress" data-url="/batches/{{ batch.id }}/status.json">
@@ -19,6 +19,18 @@
     <button type="submit">Continue reading</button>
   </div>
 </form>
+{% elif not running and batch.status == "revising" %}
+<p>The rewrite stopped. The rubric you started from is still saved.</p>
+<form method="post" action="/batches/{{ batch.id }}/continue-revise">
+  <div class="actions">
+    <button type="submit">Try the rewrite again</button>
+  </div>
+</form>
+<form method="post" action="/batches/{{ batch.id }}/cancel-revise">
+  <div class="actions">
+    <button class="secondary" type="submit">Back to the rubric</button>
+  </div>
+</form>
 {% elif not running and batch.status == "grading" %}
 <p>Grading stopped partway. Finished students are skipped.</p>
 <form method="post" action="/batches/{{ batch.id }}/continue-grade">
@@ -26,6 +38,8 @@
     <button type="submit">Continue unfinished students</button>
   </div>
 </form>
+{% elif running and batch.status == "revising" %}
+<p class="muted">The model is rewriting the rubric. Grading has not started. This page updates on its own.</p>
 {% elif running %}
 <p class="muted">This page updates on its own. You can leave it.</p>
 {% endif %}
